@@ -1,6 +1,7 @@
 const {User, Client} = require('../models');
 const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
+const {fileUploadService} = require('../microservices');
 
 const userValidator = user => {
   if (!user) {
@@ -22,7 +23,7 @@ async function getUsers(filters, options) {
   return await User.paginate(filters, options);
 }
 
-async function updateUserById(id, newDetails) {
+async function updateUserById(id, newDetails, profileImage) {
   const user = await User.findById(id);
   userValidator(user);
   let updates = {...newDetails};

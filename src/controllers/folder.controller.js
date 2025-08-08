@@ -1,8 +1,8 @@
 const httpStatus = require('http-status');
-const pick = require('../utils/pick');
 const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
 const {folderService, fileService} = require('../services');
+const {getPaginateConfig} = require('../utils/queryPHandler');
 
 const createFolder = catchAsync(async (req, res) => {
   const folder = await folderService.createFolder(req.body);
@@ -10,9 +10,16 @@ const createFolder = catchAsync(async (req, res) => {
 });
 
 const getFolders = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'parentId']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await folderService.queryFolders(filter, options);
+  const {name, parentId, ...otherOptions} = req.query;
+  const {filters, options} = getPaginateConfig(otherOptions);
+  
+  const queryFilters = {
+    ...filters,
+    ...(name && {name}),
+    ...(parentId !== undefined && {parentId})
+  };
+  
+  const result = await folderService.queryFolders(queryFilters, options);
   res.send(result);
 });
 
@@ -41,25 +48,19 @@ const getFolderTree = catchAsync(async (req, res) => {
 });
 
 const getFolderContents = catchAsync(async (req, res) => {
-  const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
+  const {name, description, dateFrom, dateTo, ...otherOptions} = req.query;
+  const {options} = getPaginateConfig(otherOptions);
+  
   const folders = await folderService.getFoldersByParentId(req.params.folderId);
-  const {files, totalFiles} = await fileService.getFilesByFolderId(
+  const result = await fileService.getFilesByFolderId(
     req.params.folderId,
     {name, description, dateFrom, dateTo},
-    {page, limit}
+    options
   );
 
   res.json({
     folders,
-    files,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalFolders: folders.length,
-      totalFiles: totalFiles,
-      totalPagesFolders: Math.ceil(folders.length / limit),
-      totalPagesFiles: Math.ceil(totalFiles / limit),
-    },
+    ...result
   });
 });
 
@@ -70,10 +71,11 @@ const getFolderBreadcrumb = catchAsync(async (req, res) => {
 
 const getFilteredFolderContents = catchAsync(async (req, res) => {
   const {folderId} = req.params;
-  const {q, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
+  const {q, type, dateFrom, dateTo, name, description, ...otherOptions} = req.query;
+  const {options} = getPaginateConfig(otherOptions);
 
   const folders = await folderService.getFoldersByParentId(folderId);
-  const {files, totalFiles} = await fileService.getFilteredFiles(
+  const result = await fileService.getFilteredFiles(
     {
       folderId,
       q,
@@ -83,19 +85,12 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
       name,
       description,
     },
-    {page, limit}
+    options
   );
 
   res.json({
     folders,
-    files,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalFolders: folders.length,
-      totalFiles: totalFiles,
-      totalPagesFiles: Math.ceil(totalFiles / limit),
-    },
+    ...result
   });
 });
 

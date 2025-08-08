@@ -1,8 +1,8 @@
 const httpStatus = require('http-status');
-const pick = require('../utils/pick');
 const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
 const {fileService, progressService} = require('../services');
+const {getPaginateConfig} = require('../utils/queryPHandler');
 const uuid = require('uuid');
 const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
 
@@ -32,9 +32,20 @@ const uploadFile = catchAsync(async (req, res) => {
 });
 
 const getFiles = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'description', 'folderId', 'mimeType', 'dateFrom', 'dateTo']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await fileService.queryFiles(filter, options);
+  const {name, description, folderId, mimeType, dateFrom, dateTo, ...otherOptions} = req.query;
+  const {filters, options} = getPaginateConfig(otherOptions);
+  
+  const queryFilters = {
+    ...filters,
+    ...(name && {name}),
+    ...(description && {description}),
+    ...(folderId && {folderId}),
+    ...(mimeType && {mimeType}),
+    ...(dateFrom && {dateFrom}),
+    ...(dateTo && {dateTo})
+  };
+  
+  const result = await fileService.queryFiles(queryFilters, options);
   res.send(result);
 });
 
@@ -73,9 +84,10 @@ const deleteFile = catchAsync(async (req, res) => {
 });
 
 const searchFiles = catchAsync(async (req, res) => {
-  const {q, folderId, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
+  const {q, folderId, type, dateFrom, dateTo, name, description, ...otherOptions} = req.query;
+  const {options} = getPaginateConfig(otherOptions);
 
-  const {files, totalFiles} = await fileService.getFilteredFiles(
+  const result = await fileService.getFilteredFiles(
     {
       q,
       folderId,
@@ -85,18 +97,10 @@ const searchFiles = catchAsync(async (req, res) => {
       name,
       description,
     },
-    {page, limit}
+    options
   );
 
-  res.json({
-    files,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total: totalFiles,
-      pages: Math.ceil(totalFiles / limit),
-    },
-  });
+  res.json(result);
 });
 
 const getTotalFiles = catchAsync(async (req, res) => {

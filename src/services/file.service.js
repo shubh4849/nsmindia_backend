@@ -43,7 +43,27 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
  * @returns {Promise<QueryResult>}
  */
 const queryFiles = async (filter, options) => {
-  const files = await File.paginate(filter, options);
+  let processedFilter = {...filter};
+  
+  if (filter.name) {
+    processedFilter.name = new RegExp(filter.name, 'i');
+  }
+  if (filter.description) {
+    processedFilter.description = new RegExp(filter.description, 'i');
+  }
+  if (filter.mimeType) {
+    processedFilter.mimeType = new RegExp(filter.mimeType, 'i');
+  }
+  if (filter.dateFrom || filter.dateTo) {
+    processedFilter.createdAt = {};
+    if (filter.dateFrom) processedFilter.createdAt.$gte = new Date(filter.dateFrom);
+    if (filter.dateTo) processedFilter.createdAt.$lte = new Date(filter.dateTo);
+  }
+  
+  delete processedFilter.dateFrom;
+  delete processedFilter.dateTo;
+  
+  const files = await File.paginate(processedFilter, options);
   return files;
 };
 
@@ -138,14 +158,13 @@ const getFilteredFiles = async (filter, options) => {
     if (filter.dateTo) query.createdAt.$lte = new Date(filter.dateTo);
   }
 
-  const files = await File.find(query)
-    .populate('folderId')
-    .skip((options.page - 1) * options.limit)
-    .limit(parseInt(options.limit));
-
-  const totalFiles = await File.countDocuments(query);
-
-  return {files, totalFiles};
+  const paginationOptions = {
+    ...options,
+    populate: 'folderId'
+  };
+  
+  const result = await File.paginate(query, paginationOptions);
+  return result;
 };
 
 /**
