@@ -158,11 +158,11 @@ const cascadeDeleteFolder = async folderId => {
 };
 
 /**
- * Get all folders
+ * Get all folders with selected fields for tree building
  * @returns {Promise<Array<Folder>>}
  */
 const getAllFolders = async () => {
-  return Folder.find();
+  return Folder.find().select('_id name parentId');
 };
 
 /**
