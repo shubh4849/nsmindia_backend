@@ -14,7 +14,7 @@ mongoose
   });
 
 app.listen(config.port, () => {
-  console.log(`BNeighbourly app listening on port ${config.port}!`);
+  console.log(`NSM INDIA BACKEND app listening on port ${config.port}!`);
 });
 
 // ------------- Don't Modify  -------------

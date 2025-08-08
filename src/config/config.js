@@ -12,13 +12,9 @@ const envVarsSchema = Joi.object()
       .required(),
     PORT: Joi.number().default(8082),
     MONGODB_URL: Joi.string().required(),
-    TWILIO_PHONE: Joi.string().required(),
-    TWILIO_SID: Joi.string().required(),
-    TWILIO_AUTH_TOKEN: Joi.string().required(),
-    AWS_S3_SECRET_ACCESS_KEY: Joi.string().required(),
-    AWS_S3_REGION: Joi.string().required(),
-    AWS_S3_ACCESS_KEY_ID: Joi.string().required(),
-    AWS_S3_BUCKET: Joi.string().required(),
+    CLOUDINARY_CLOUD_NAME: Joi.string().required(),
+    CLOUDINARY_API_KEY: Joi.string().required(),
+    CLOUDINARY_API_SECRET: Joi.string().required(),
   })
   .unknown();
 
@@ -33,18 +29,10 @@ if (error) {
 module.exports = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
-  twilio: {
-    sid: envVars.TWILIO_SID,
-    phone: envVars.TWILIO_PHONE,
-    authToken: envVars.TWILIO_AUTH_TOKEN,
-  },
-  aws: {
-    s3: {
-      name: envVars.AWS_S3_BUCKET,
-      region: envVars.AWS_S3_REGION,
-      accessKeyId: envVars.AWS_S3_ACCESS_KEY_ID,
-      secretAccessKey: envVars.AWS_S3_SECRET_ACCESS_KEY,
-    },
+  cloudinary: {
+    cloudName: envVars.CLOUDINARY_CLOUD_NAME,
+    apiKey: envVars.CLOUDINARY_API_KEY,
+    apiSecret: envVars.CLOUDINARY_API_SECRET,
   },
   mongoose: {
     // exception added for TDD purpose

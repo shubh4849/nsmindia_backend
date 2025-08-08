@@ -5,9 +5,9 @@ const dbOptions = {
   sortOrder: 'asc',
 };
 
-const fileTypes = ['image/jpeg', 'image/jpg', 'image/png', 'video/mp4', 'application/pdf', 'application/msword'];
+const {ALL_ALLOWED_FILE_TYPES} = require('./fileTypes');
 
 module.exports = {
   dbOptions,
-  fileTypes,
+  fileTypes: ALL_ALLOWED_FILE_TYPES,
 };
