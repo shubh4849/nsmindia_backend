@@ -22,6 +22,9 @@ router.post('/upload', upload.single('file'), fileController.uploadFile);
 
 router.route('/').get(fileController.getFiles);
 
+// Specific routes must be declared before generic parameterized routes
+router.get('/search', fileController.searchFiles);
+
 router
   .route('/:fileId')
   .get(validate(fileValidation.getFile), fileController.getFile)
@@ -30,7 +33,5 @@ router
 
 router.get('/:fileId/download', validate(fileValidation.getFile), fileController.downloadFile);
 router.get('/:fileId/preview', validate(fileValidation.getFile), fileController.previewFile);
-
-router.get('/search', fileController.searchFiles);
 
 module.exports = router;
