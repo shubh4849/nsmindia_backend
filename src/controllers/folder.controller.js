@@ -104,6 +104,18 @@ const getTotalFolders = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send({count});
 });
 
+const getDirectChildFoldersCount = catchAsync(async (req, res) => {
+  const {folderId} = req.params;
+  const count = await folderService.countChildFolders(folderId);
+  res.status(httpStatus.OK).send({count});
+});
+
+const getDirectChildFilesCount = catchAsync(async (req, res) => {
+  const {folderId} = req.params;
+  const count = await fileService.countChildFiles(folderId);
+  res.status(httpStatus.OK).send({count});
+});
+
 module.exports = {
   createFolder,
   getFolders,
@@ -116,3 +128,6 @@ module.exports = {
   getFilteredFolderContents,
   getTotalFolders,
 };
+
+module.exports.getDirectChildFoldersCount = getDirectChildFoldersCount;
+module.exports.getDirectChildFilesCount = getDirectChildFilesCount;

@@ -24,4 +24,16 @@ router.get('/:folderId/contents', validate(folderValidation.getFolder), folderCo
 router.get('/:folderId/breadcrumb', validate(folderValidation.getFolder), folderController.getFolderBreadcrumb);
 router.get('/:folderId/filtered', validate(folderValidation.getFolder), folderController.getFilteredFolderContents);
 
+// New routes for direct child counts
+router.get(
+  '/:folderId/child-folders/count',
+  validate(folderValidation.getFolder),
+  folderController.getDirectChildFoldersCount
+);
+router.get(
+  '/:folderId/child-files/count',
+  validate(folderValidation.getFolder),
+  folderController.getDirectChildFilesCount
+);
+
 module.exports = router;

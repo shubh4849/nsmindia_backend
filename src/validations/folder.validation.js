@@ -36,9 +36,28 @@ const deleteFolder = {
   }),
 };
 
+const getFolders = {
+  query: Joi.object().keys({
+    name: Joi.string(),
+    parentId: Joi.string()
+      .custom(objectId)
+      .allow(null),
+    sortBy: Joi.string(),
+    limit: Joi.number()
+      .integer()
+      .min(1)
+      .default(1),
+    page: Joi.number()
+      .integer()
+      .min(1)
+      .default(1),
+  }),
+};
+
 module.exports = {
   createFolder,
   getFolder,
   updateFolder,
   deleteFolder,
+  getFolders,
 };

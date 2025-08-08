@@ -36,7 +36,7 @@ const createFolder = async folderBody => {
 
 /**
  * Query for folders
- * @param {Object} filter - Mongo filter
+ * @param {Object} filter - Mongo filter (can include name, parentId)
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
@@ -44,7 +44,21 @@ const createFolder = async folderBody => {
  * @returns {Promise<QueryResult>}
  */
 const queryFolders = async (filter, options) => {
-  const folders = await Folder.paginate(filter, options);
+  let query = {};
+
+  if (filter.name) {
+    query.name = new RegExp(filter.name, 'i');
+  }
+
+  // If parentId is explicitly null or not provided, query for root folders (parentId: null)
+  // Otherwise, use the provided parentId
+  if (filter.parentId === null || filter.parentId === undefined) {
+    query.parentId = null;
+  } else if (filter.parentId) {
+    query.parentId = filter.parentId;
+  }
+
+  const folders = await Folder.paginate(query, options);
   return folders;
 };
 
@@ -182,6 +196,15 @@ const getTotalFoldersCount = async () => {
   return Folder.countDocuments();
 };
 
+/**
+ * Get count of direct child folders for a given parentId
+ * @param {ObjectId|null} parentId - The ID of the parent folder, or null for root
+ * @returns {Promise<number>}
+ */
+const countChildFolders = async parentId => {
+  return Folder.countDocuments({parentId});
+};
+
 module.exports = {
   buildTree,
   createFolder,
@@ -196,3 +219,4 @@ module.exports = {
 };
 
 module.exports.getTotalFoldersCount = getTotalFoldersCount;
+module.exports.countChildFolders = countChildFolders;

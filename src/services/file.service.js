@@ -156,6 +156,15 @@ const getTotalFilesCount = async () => {
   return File.countDocuments();
 };
 
+/**
+ * Get count of direct child files for a given folderId
+ * @param {ObjectId} folderId - The ID of the parent folder
+ * @returns {Promise<number>}
+ */
+const countChildFiles = async folderId => {
+  return File.countDocuments({folderId});
+};
+
 module.exports = {
   createFile,
   queryFiles,
@@ -167,3 +176,4 @@ module.exports = {
 };
 
 module.exports.getTotalFilesCount = getTotalFilesCount;
+module.exports.countChildFiles = countChildFiles;
