@@ -162,7 +162,7 @@ const cascadeDeleteFolder = async folderId => {
  * @returns {Promise<Array<Folder>>}
  */
 const getAllFolders = async () => {
-  return Folder.find().select('_id name parentId');
+  return Folder.find().select('_id name parentId path');
 };
 
 /**
