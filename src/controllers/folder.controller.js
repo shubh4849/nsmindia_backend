@@ -41,24 +41,24 @@ const getFolderTree = catchAsync(async (req, res) => {
 });
 
 const getFolderContents = catchAsync(async (req, res) => {
-  const {page = 1, limit = 10} = req.query;
+  const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
   const folders = await folderService.getFoldersByParentId(req.params.folderId);
-  const files = await fileService.getFilesByFolderId(req.params.folderId);
-
-  // Basic pagination logic (can be refined based on client needs)
-  const paginatedFolders = folders.slice((page - 1) * limit, page * limit);
-  const paginatedFiles = files.slice((page - 1) * limit, page * limit);
+  const {files, totalFiles} = await fileService.getFilesByFolderId(
+    req.params.folderId,
+    {name, description, dateFrom, dateTo},
+    {page, limit}
+  );
 
   res.json({
-    folders: paginatedFolders,
-    files: paginatedFiles,
+    folders,
+    files,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
       totalFolders: folders.length,
-      totalFiles: files.length,
+      totalFiles: totalFiles,
       totalPagesFolders: Math.ceil(folders.length / limit),
-      totalPagesFiles: Math.ceil(files.length / limit),
+      totalPagesFiles: Math.ceil(totalFiles / limit),
     },
   });
 });
@@ -70,7 +70,7 @@ const getFolderBreadcrumb = catchAsync(async (req, res) => {
 
 const getFilteredFolderContents = catchAsync(async (req, res) => {
   const {folderId} = req.params;
-  const {q, type, dateFrom, dateTo, page = 1, limit = 10} = req.query;
+  const {q, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
 
   const folders = await folderService.getFoldersByParentId(folderId);
   const {files, totalFiles} = await fileService.getFilteredFiles(
@@ -80,6 +80,8 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
       type,
       dateFrom,
       dateTo,
+      name,
+      description,
     },
     {page, limit}
   );
@@ -97,6 +99,11 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
   });
 });
 
+const getTotalFolders = catchAsync(async (req, res) => {
+  const count = await folderService.getTotalFoldersCount();
+  res.status(httpStatus.OK).send({count});
+});
+
 module.exports = {
   createFolder,
   getFolders,
@@ -107,4 +114,5 @@ module.exports = {
   getFolderContents,
   getFolderBreadcrumb,
   getFilteredFolderContents,
+  getTotalFolders,
 };

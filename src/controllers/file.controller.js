@@ -4,7 +4,7 @@ const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
 const {fileService, progressService} = require('../services');
 const uuid = require('uuid');
-const {fileTypes} = require('../constants');
+const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
 
 const uploadFile = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
@@ -22,7 +22,7 @@ const uploadFile = catchAsync(async (req, res) => {
     originalName: req.file.originalname,
     mimeType: req.file.mimetype,
     fileSize: req.file.size,
-    // folderId: req.body.folderId,
+    folderId: req.body.folderId,
   });
 
   // Create upload progress entry
@@ -32,7 +32,7 @@ const uploadFile = catchAsync(async (req, res) => {
 });
 
 const getFiles = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'folderId', 'mimeType']);
+  const filter = pick(req.query, ['name', 'description', 'folderId', 'mimeType', 'dateFrom', 'dateTo']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await fileService.queryFiles(filter, options);
   res.send(result);
@@ -73,7 +73,7 @@ const deleteFile = catchAsync(async (req, res) => {
 });
 
 const searchFiles = catchAsync(async (req, res) => {
-  const {q, folderId, type, dateFrom, dateTo, page = 1, limit = 10} = req.query;
+  const {q, folderId, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
 
   const {files, totalFiles} = await fileService.getFilteredFiles(
     {
@@ -82,6 +82,8 @@ const searchFiles = catchAsync(async (req, res) => {
       type,
       dateFrom,
       dateTo,
+      name,
+      description,
     },
     {page, limit}
   );
@@ -97,6 +99,11 @@ const searchFiles = catchAsync(async (req, res) => {
   });
 });
 
+const getTotalFiles = catchAsync(async (req, res) => {
+  const count = await fileService.getTotalFilesCount();
+  res.status(httpStatus.OK).send({count});
+});
+
 module.exports = {
   uploadFile,
   getFiles,
@@ -107,3 +114,5 @@ module.exports = {
   deleteFile,
   searchFiles,
 };
+
+module.exports.getTotalFiles = getTotalFiles;

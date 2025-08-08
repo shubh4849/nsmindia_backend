@@ -24,6 +24,7 @@ router.route('/').get(fileController.getFiles);
 
 // Specific routes must be declared before generic parameterized routes
 router.get('/search', fileController.searchFiles);
+router.get('/count', fileController.getTotalFiles); // New route for total files count
 
 router
   .route('/:fileId')

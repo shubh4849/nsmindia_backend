@@ -174,6 +174,14 @@ const getFoldersByParentId = async parentId => {
   return Folder.find({parentId});
 };
 
+/**
+ * Get total count of folders
+ * @returns {Promise<number>}
+ */
+const getTotalFoldersCount = async () => {
+  return Folder.countDocuments();
+};
+
 module.exports = {
   buildTree,
   createFolder,
@@ -186,3 +194,5 @@ module.exports = {
   getAllFolders,
   getFoldersByParentId,
 };
+
+module.exports.getTotalFoldersCount = getTotalFoldersCount;

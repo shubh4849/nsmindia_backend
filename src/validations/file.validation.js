@@ -39,9 +39,52 @@ const deleteFile = {
   }),
 };
 
+const searchFiles = {
+  query: Joi.object().keys({
+    q: Joi.string(),
+    folderId: Joi.string().custom(objectId),
+    type: Joi.string(),
+    name: Joi.string(),
+    description: Joi.string(),
+    dateFrom: Joi.string(),
+    dateTo: Joi.string(),
+    sortBy: Joi.string(),
+    limit: Joi.number()
+      .integer()
+      .min(1)
+      .max(100)
+      .default(10),
+    page: Joi.number()
+      .integer()
+      .min(1)
+      .default(1),
+  }),
+};
+
+const getFiles = {
+  query: Joi.object().keys({
+    folderId: Joi.string().custom(objectId),
+    name: Joi.string(),
+    description: Joi.string(),
+    dateFrom: Joi.string(),
+    dateTo: Joi.string(),
+    sortBy: Joi.string(),
+    limit: Joi.number()
+      .integer()
+      .min(1)
+      .default(1),
+    page: Joi.number()
+      .integer()
+      .min(1)
+      .default(1),
+  }),
+};
+
 module.exports = {
   createFile,
   getFile,
   updateFile,
   deleteFile,
+  searchFiles,
+  getFiles,
 };

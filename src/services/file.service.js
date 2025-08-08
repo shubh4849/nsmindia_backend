@@ -97,13 +97,13 @@ const deleteFileById = async fileId => {
  * @param {ObjectId} folderId
  * @returns {Promise<Array<File>>}
  */
-const getFilesByFolderId = async folderId => {
-  return File.find({folderId});
+const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => {
+  return getFilteredFiles({...filterParams, folderId}, options);
 };
 
 /**
  * Get filtered files
- * @param {Object} filter - Mongo filter
+ * @param {Object} filter - Mongo filter (includes q, folderId, type, dateFrom, dateTo, name, description)
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
@@ -116,8 +116,17 @@ const getFilteredFiles = async (filter, options) => {
     query.folderId = filter.folderId;
   }
 
+  // Prioritize text search (q) if provided, as it covers both name and description
   if (filter.q) {
     query.$text = {$search: filter.q};
+  } else {
+    // Apply individual name/description regex searches if q is not present
+    if (filter.name) {
+      query.name = new RegExp(filter.name, 'i');
+    }
+    if (filter.description) {
+      query.description = new RegExp(filter.description, 'i');
+    }
   }
 
   if (filter.type) {
@@ -139,6 +148,14 @@ const getFilteredFiles = async (filter, options) => {
   return {files, totalFiles};
 };
 
+/**
+ * Get total count of files
+ * @returns {Promise<number>}
+ */
+const getTotalFilesCount = async () => {
+  return File.countDocuments();
+};
+
 module.exports = {
   createFile,
   queryFiles,
@@ -148,3 +165,5 @@ module.exports = {
   getFilesByFolderId,
   getFilteredFiles,
 };
+
+module.exports.getTotalFilesCount = getTotalFilesCount;

@@ -12,6 +12,7 @@ router
 
 // Specific routes must be declared before generic parameterized routes
 router.get('/tree', folderController.getFolderTree);
+router.get('/count', folderController.getTotalFolders); // New route for total folders count
 
 router
   .route('/:folderId')
