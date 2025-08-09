@@ -1,10 +1,11 @@
 const httpStatus = require('http-status');
+const pick = require('../utils/pick');
 const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
 const {fileService, progressService} = require('../services');
-const {getPaginateConfig} = require('../utils/queryPHandler');
 const uuid = require('uuid');
 const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
+const {getPaginateConfig} = require('../utils/queryPHandler');
 
 const uploadFile = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
@@ -32,20 +33,8 @@ const uploadFile = catchAsync(async (req, res) => {
 });
 
 const getFiles = catchAsync(async (req, res) => {
-  const {name, description, folderId, mimeType, dateFrom, dateTo, ...otherOptions} = req.query;
-  const {filters, options} = getPaginateConfig(otherOptions);
-  
-  const queryFilters = {
-    ...filters,
-    ...(name && {name}),
-    ...(description && {description}),
-    ...(folderId && {folderId}),
-    ...(mimeType && {mimeType}),
-    ...(dateFrom && {dateFrom}),
-    ...(dateTo && {dateTo})
-  };
-  
-  const result = await fileService.queryFiles(queryFilters, options);
+  const {filters, options} = getPaginateConfig(req.query);
+  const result = await fileService.queryFiles(filters, options);
   res.send(result);
 });
 
@@ -84,18 +73,13 @@ const deleteFile = catchAsync(async (req, res) => {
 });
 
 const searchFiles = catchAsync(async (req, res) => {
-  const {q, folderId, type, dateFrom, dateTo, name, description, ...otherOptions} = req.query;
-  const {options} = getPaginateConfig(otherOptions);
+  const {q, ...otherQuery} = req.query;
+  const {filters, options} = getPaginateConfig(otherQuery);
 
   const result = await fileService.getFilteredFiles(
     {
       q,
-      folderId,
-      type,
-      dateFrom,
-      dateTo,
-      name,
-      description,
+      ...filters,
     },
     options
   );
@@ -117,6 +101,5 @@ module.exports = {
   updateFile,
   deleteFile,
   searchFiles,
+  getTotalFiles,
 };
-
-module.exports.getTotalFiles = getTotalFiles;

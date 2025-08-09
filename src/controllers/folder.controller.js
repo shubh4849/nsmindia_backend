@@ -1,4 +1,5 @@
 const httpStatus = require('http-status');
+const pick = require('../utils/pick');
 const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
 const {folderService, fileService} = require('../services');
@@ -10,16 +11,8 @@ const createFolder = catchAsync(async (req, res) => {
 });
 
 const getFolders = catchAsync(async (req, res) => {
-  const {name, parentId, ...otherOptions} = req.query;
-  const {filters, options} = getPaginateConfig(otherOptions);
-  
-  const queryFilters = {
-    ...filters,
-    ...(name && {name}),
-    ...(parentId !== undefined && {parentId})
-  };
-  
-  const result = await folderService.queryFolders(queryFilters, options);
+  const {filters, options} = getPaginateConfig(req.query);
+  const result = await folderService.queryFolders(filters, options);
   res.send(result);
 });
 
@@ -48,19 +41,25 @@ const getFolderTree = catchAsync(async (req, res) => {
 });
 
 const getFolderContents = catchAsync(async (req, res) => {
-  const {name, description, dateFrom, dateTo, ...otherOptions} = req.query;
-  const {options} = getPaginateConfig(otherOptions);
-  
+  const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
   const folders = await folderService.getFoldersByParentId(req.params.folderId);
-  const result = await fileService.getFilesByFolderId(
+  const {files, totalFiles} = await fileService.getFilesByFolderId(
     req.params.folderId,
     {name, description, dateFrom, dateTo},
-    options
+    {page, limit}
   );
 
   res.json({
     folders,
-    ...result
+    files,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalFolders: folders.length,
+      totalFiles: totalFiles,
+      totalPagesFolders: Math.ceil(folders.length / limit),
+      totalPagesFiles: Math.ceil(totalFiles / limit),
+    },
   });
 });
 
@@ -71,11 +70,10 @@ const getFolderBreadcrumb = catchAsync(async (req, res) => {
 
 const getFilteredFolderContents = catchAsync(async (req, res) => {
   const {folderId} = req.params;
-  const {q, type, dateFrom, dateTo, name, description, ...otherOptions} = req.query;
-  const {options} = getPaginateConfig(otherOptions);
+  const {q, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
 
   const folders = await folderService.getFoldersByParentId(folderId);
-  const result = await fileService.getFilteredFiles(
+  const {files, totalFiles} = await fileService.getFilteredFiles(
     {
       folderId,
       q,
@@ -85,12 +83,19 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
       name,
       description,
     },
-    options
+    {page, limit}
   );
 
   res.json({
     folders,
-    ...result
+    files,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalFolders: folders.length,
+      totalFiles: totalFiles,
+      totalPagesFiles: Math.ceil(totalFiles / limit),
+    },
   });
 });
 

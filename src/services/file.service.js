@@ -27,44 +27,31 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
     filePath: uploadResult.secure_url, // Store the secure URL from Cloudinary
     fileSize: fileSize,
     mimeType: mimeType,
-    // folderId: folderId,
+    folderId: folderId,
   };
 
   return File.create(fileBody);
 };
 
 /**
- * Query for files
- * @param {Object} filter - Mongo filter
- * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
+ * Query for files (supports paginate plugin options)
+ * @param {Object} filters - Mongo filter
+ * @param {Object} options - Query options from getPaginateConfig
  * @returns {Promise<QueryResult>}
  */
-const queryFiles = async (filter, options) => {
-  let processedFilter = {...filter};
-  
-  if (filter.name) {
-    processedFilter.name = new RegExp(filter.name, 'i');
+const queryFiles = async (filters, options) => {
+  // Map simple filters if present
+  const mongoFilters = {};
+  if (filters.name) mongoFilters.name = new RegExp(filters.name, 'i');
+  if (filters.description) mongoFilters.description = new RegExp(filters.description, 'i');
+  if (filters.folderId) mongoFilters.folderId = filters.folderId;
+  if (filters.mimeType) mongoFilters.mimeType = new RegExp(filters.mimeType, 'i');
+  if (filters.dateFrom || filters.dateTo) {
+    mongoFilters.createdAt = {};
+    if (filters.dateFrom) mongoFilters.createdAt.$gte = new Date(filters.dateFrom);
+    if (filters.dateTo) mongoFilters.createdAt.$lte = new Date(filters.dateTo);
   }
-  if (filter.description) {
-    processedFilter.description = new RegExp(filter.description, 'i');
-  }
-  if (filter.mimeType) {
-    processedFilter.mimeType = new RegExp(filter.mimeType, 'i');
-  }
-  if (filter.dateFrom || filter.dateTo) {
-    processedFilter.createdAt = {};
-    if (filter.dateFrom) processedFilter.createdAt.$gte = new Date(filter.dateFrom);
-    if (filter.dateTo) processedFilter.createdAt.$lte = new Date(filter.dateTo);
-  }
-  
-  delete processedFilter.dateFrom;
-  delete processedFilter.dateTo;
-  
-  const files = await File.paginate(processedFilter, options);
-  return files;
+  return File.paginate(mongoFilters, options || {});
 };
 
 /**
@@ -125,9 +112,6 @@ const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => 
  * Get filtered files
  * @param {Object} filter - Mongo filter (includes q, folderId, type, dateFrom, dateTo, name, description)
  * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
  * @returns {Promise<QueryResult>}
  */
 const getFilteredFiles = async (filter, options) => {
@@ -158,13 +142,9 @@ const getFilteredFiles = async (filter, options) => {
     if (filter.dateTo) query.createdAt.$lte = new Date(filter.dateTo);
   }
 
-  const paginationOptions = {
-    ...options,
-    populate: 'folderId'
-  };
-  
-  const result = await File.paginate(query, paginationOptions);
-  return result;
+  // Support pipeline/project/populate via paginate options
+  const paginateOptions = options || {};
+  return File.paginate(query, paginateOptions);
 };
 
 /**
@@ -192,7 +172,6 @@ module.exports = {
   deleteFileById,
   getFilesByFolderId,
   getFilteredFiles,
+  getTotalFilesCount,
+  countChildFiles,
 };
-
-module.exports.getTotalFilesCount = getTotalFilesCount;
-module.exports.countChildFiles = countChildFiles;
