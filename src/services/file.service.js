@@ -14,22 +14,19 @@ const {fileUploadService} = require('../microservices');
  * @returns {Promise<File>}
  */
 const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) => {
-  // Upload file to Cloudinary
   const uploadResult = await fileUploadService.uploadFileToCloudinary(
     buffer,
     `files/${folderId || 'root'}`,
     originalName
   );
-
   const fileBody = {
-    name: uploadResult.original_filename || originalName, // Use original_filename from Cloudinary or originalName
-    originalName: originalName,
-    filePath: uploadResult.secure_url, // Store the secure URL from Cloudinary
-    fileSize: fileSize,
-    mimeType: mimeType,
-    folderId: folderId,
+    name: uploadResult.original_filename || originalName,
+    originalName,
+    filePath: uploadResult.secure_url,
+    fileSize,
+    mimeType,
+    folderId,
   };
-
   return File.create(fileBody);
 };
 
@@ -40,7 +37,6 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
  * @returns {Promise<QueryResult>}
  */
 const queryFiles = async (filters, options) => {
-  // Map simple filters if present
   const mongoFilters = {};
   if (filters.name) mongoFilters.name = new RegExp(filters.name, 'i');
   if (filters.description) mongoFilters.description = new RegExp(filters.description, 'i');
@@ -59,9 +55,7 @@ const queryFiles = async (filters, options) => {
  * @param {ObjectId} id
  * @returns {Promise<File>}
  */
-const getFileById = async id => {
-  return File.findById(id);
-};
+const getFileById = async id => File.findById(id);
 
 /**
  * Update file by id
@@ -71,31 +65,35 @@ const getFileById = async id => {
  */
 const updateFileById = async (fileId, updateBody) => {
   const file = await getFileById(fileId);
-  if (!file) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
-  }
+  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   Object.assign(file, updateBody);
   await file.save();
   return file;
 };
 
 /**
- * Delete file by id and clean up physical file (now from Cloudinary)
+ * Delete file by id and clean up physical file (Cloudinary)
  * @param {ObjectId} fileId
  * @returns {Promise<File>}
  */
 const deleteFileById = async fileId => {
   const file = await getFileById(fileId);
-  if (!file) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
-  }
-  const cloudinaryPublicId = file.filePath
-    .split('/')
-    .pop()
-    .split('.')[0]; // Extract public ID from URL
-  await fileUploadService.deleteFileFromCloudinary(cloudinaryPublicId);
-  await file.remove();
+  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
 
+  // Best-effort Cloudinary cleanup (public_id parsed from URL)
+  try {
+    const cloudinaryPublicId = file.filePath
+      .split('/')
+      .pop()
+      .split('.')[0];
+    if (cloudinaryPublicId) {
+      await fileUploadService.deleteFileFromCloudinary(cloudinaryPublicId);
+    }
+  } catch (_) {
+    // ignore cleanup errors
+  }
+
+  await file.deleteOne();
   return file;
 };
 
@@ -116,53 +114,24 @@ const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => 
  */
 const getFilteredFiles = async (filter, options) => {
   let query = {};
-  if (filter.folderId) {
-    query.folderId = filter.folderId;
-  }
-
-  // Prioritize text search (q) if provided, as it covers both name and description
+  if (filter.folderId) query.folderId = filter.folderId;
   if (filter.q) {
     query.$text = {$search: filter.q};
   } else {
-    // Apply individual name/description regex searches if q is not present
-    if (filter.name) {
-      query.name = new RegExp(filter.name, 'i');
-    }
-    if (filter.description) {
-      query.description = new RegExp(filter.description, 'i');
-    }
+    if (filter.name) query.name = new RegExp(filter.name, 'i');
+    if (filter.description) query.description = new RegExp(filter.description, 'i');
   }
-
-  if (filter.type) {
-    query.mimeType = new RegExp(filter.type, 'i');
-  }
+  if (filter.type) query.mimeType = new RegExp(filter.type, 'i');
   if (filter.dateFrom || filter.dateTo) {
     query.createdAt = {};
     if (filter.dateFrom) query.createdAt.$gte = new Date(filter.dateFrom);
     if (filter.dateTo) query.createdAt.$lte = new Date(filter.dateTo);
   }
-
-  // Support pipeline/project/populate via paginate options
-  const paginateOptions = options || {};
-  return File.paginate(query, paginateOptions);
+  return File.paginate(query, options || {});
 };
 
-/**
- * Get total count of files
- * @returns {Promise<number>}
- */
-const getTotalFilesCount = async () => {
-  return File.countDocuments();
-};
-
-/**
- * Get count of direct child files for a given folderId
- * @param {ObjectId} folderId - The ID of the parent folder
- * @returns {Promise<number>}
- */
-const countChildFiles = async folderId => {
-  return File.countDocuments({folderId});
-};
+const getTotalFilesCount = async () => File.countDocuments();
+const countChildFiles = async folderId => File.countDocuments({folderId});
 
 module.exports = {
   createFile,

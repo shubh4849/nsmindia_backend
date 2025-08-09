@@ -11,7 +11,33 @@ const createFolder = catchAsync(async (req, res) => {
 });
 
 const getFolders = catchAsync(async (req, res) => {
-  const {filters, options} = getPaginateConfig(req.query);
+  // Extract includeChildCounts separately so it doesn't enter filters
+  const {includeChildCounts, ...rest} = req.query;
+  const {filters, options} = getPaginateConfig(rest);
+
+  if (includeChildCounts === 'true' || includeChildCounts === true) {
+    options.pipeline = [
+      {
+        $lookup: {
+          from: 'folders',
+          let: {parent: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$parentId', '$$parent']}}}, {$project: {_id: 1}}],
+          as: 'childFoldersDocs',
+        },
+      },
+      {
+        $lookup: {
+          from: 'files',
+          let: {folder: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$folderId', '$$folder']}}}, {$project: {_id: 1}}],
+          as: 'childFilesDocs',
+        },
+      },
+      {$addFields: {counts: {childFolders: {$size: '$childFoldersDocs'}, childFiles: {$size: '$childFilesDocs'}}}},
+      {$project: {childFoldersDocs: 0, childFilesDocs: 0}},
+    ];
+  }
+
   const result = await folderService.queryFolders(filters, options);
   res.send(result);
 });
@@ -43,11 +69,16 @@ const getFolderTree = catchAsync(async (req, res) => {
 const getFolderContents = catchAsync(async (req, res) => {
   const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
   const folders = await folderService.getFoldersByParentId(req.params.folderId);
-  const {files, totalFiles} = await fileService.getFilesByFolderId(
+
+  const filesPage = await fileService.getFilesByFolderId(
     req.params.folderId,
     {name, description, dateFrom, dateTo},
     {page, limit}
   );
+
+  const files = filesPage.results || [];
+  const totalFiles = filesPage.totalResults || 0;
+  const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
   res.json({
     folders,
@@ -58,7 +89,7 @@ const getFolderContents = catchAsync(async (req, res) => {
       totalFolders: folders.length,
       totalFiles: totalFiles,
       totalPagesFolders: Math.ceil(folders.length / limit),
-      totalPagesFiles: Math.ceil(totalFiles / limit),
+      totalPagesFiles: totalPagesFiles,
     },
   });
 });
@@ -73,18 +104,14 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
   const {q, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
 
   const folders = await folderService.getFoldersByParentId(folderId);
-  const {files, totalFiles} = await fileService.getFilteredFiles(
-    {
-      folderId,
-      q,
-      type,
-      dateFrom,
-      dateTo,
-      name,
-      description,
-    },
+  const filesPage = await fileService.getFilteredFiles(
+    {folderId, q, type, dateFrom, dateTo, name, description},
     {page, limit}
   );
+
+  const files = filesPage.results || [];
+  const totalFiles = filesPage.totalResults || 0;
+  const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
   res.json({
     folders,
@@ -94,7 +121,7 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
       limit: parseInt(limit),
       totalFolders: folders.length,
       totalFiles: totalFiles,
-      totalPagesFiles: Math.ceil(totalFiles / limit),
+      totalPagesFiles: totalPagesFiles,
     },
   });
 });

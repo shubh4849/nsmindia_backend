@@ -118,9 +118,7 @@ const createFile = {
     filePath: Joi.string().required(),
     fileSize: Joi.number().required(),
     mimeType: Joi.string().required(),
-    folderId: Joi.string()
-      .custom(objectId)
-      .required(),
+    folderId: Joi.string().custom(objectId).required(),
     description: Joi.string(),
   }),
 };
@@ -135,12 +133,10 @@ const updateFile = {
   params: Joi.object().keys({
     fileId: Joi.required().custom(objectId),
   }),
-  body: Joi.object()
-    .keys({
-      name: Joi.string(),
-      description: Joi.string(),
-    })
-    .min(1),
+  body: Joi.object().keys({
+    name: Joi.string(),
+    description: Joi.string(),
+  }).min(1),
 };
 
 const deleteFile = {
@@ -159,15 +155,8 @@ const searchFiles = {
     dateFrom: Joi.string(),
     dateTo: Joi.string(),
     sortBy: Joi.string(),
-    limit: Joi.number()
-      .integer()
-      .min(1)
-      .max(100)
-      .default(10),
-    page: Joi.number()
-      .integer()
-      .min(1)
-      .default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10),
+    page: Joi.number().integer().min(1).default(1),
   }),
 };
 
@@ -179,14 +168,8 @@ const getFiles = {
     dateFrom: Joi.string(),
     dateTo: Joi.string(),
     sortBy: Joi.string(),
-    limit: Joi.number()
-      .integer()
-      .min(1)
-      .default(1),
-    page: Joi.number()
-      .integer()
-      .min(1)
-      .default(1),
+    limit: Joi.number().integer().min(1).default(1),
+    page: Joi.number().integer().min(1).default(1),
   }),
 };
 
@@ -224,14 +207,12 @@ const updateFolder = {
   params: Joi.object().keys({
     folderId: Joi.required().custom(objectId),
   }),
-  body: Joi.object()
-    .keys({
-      name: Joi.string(),
-      parentId: Joi.string().custom(objectId),
-      description: Joi.string(),
-      path: Joi.string(),
-    })
-    .min(1),
+  body: Joi.object().keys({
+    name: Joi.string(),
+    parentId: Joi.string().custom(objectId),
+    description: Joi.string(),
+    path: Joi.string(),
+  }).min(1),
 };
 
 const deleteFolder = {
@@ -243,18 +224,10 @@ const deleteFolder = {
 const getFolders = {
   query: Joi.object().keys({
     name: Joi.string(),
-    parentId: Joi.string()
-      .custom(objectId)
-      .allow(null),
+    parentId: Joi.string().custom(objectId).allow(null),
     sortBy: Joi.string(),
-    limit: Joi.number()
-      .integer()
-      .min(1)
-      .default(1),
-    page: Joi.number()
-      .integer()
-      .min(1)
-      .default(1),
+    limit: Joi.number().integer().min(1).default(1),
+    page: Joi.number().integer().min(1).default(1),
   }),
 };
 
@@ -277,9 +250,10 @@ const httpStatus = require('http-status');
 const pick = require('../utils/pick');
 const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
-const { fileService, progressService } = require('../services');
+const {fileService, progressService} = require('../services');
 const uuid = require('uuid');
-const { fileTypes, ALL_ALLOWED_FILE_TYPES } = require('../constants');
+const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
+const {getPaginateConfig} = require('../utils/queryPHandler');
 
 const uploadFile = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
@@ -300,16 +274,15 @@ const uploadFile = catchAsync(async (req, res) => {
     folderId: req.body.folderId,
   });
 
-  // Create upload progress entry
   await progressService.updateUploadProgress(uploadId, req.file.size, req.file.size);
 
-  res.status(httpStatus.CREATED).send({ uploadId, fileId: file._id });
+  // Return full file document along with uploadId
+  res.status(httpStatus.CREATED).send({uploadId, file});
 });
 
 const getFiles = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'description', 'folderId', 'mimeType', 'dateFrom', 'dateTo']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await fileService.queryFiles(filter, options);
+  const {filters, options} = getPaginateConfig(req.query);
+  const result = await fileService.queryFiles(filters, options);
   res.send(result);
 });
 
@@ -326,7 +299,7 @@ const downloadFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.filePath); // Redirect to Cloudinary URL for download
+  res.redirect(file.filePath);
 });
 
 const previewFile = catchAsync(async (req, res) => {
@@ -334,7 +307,7 @@ const previewFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.filePath); // Redirect to Cloudinary URL for preview
+  res.redirect(file.filePath);
 });
 
 const updateFile = catchAsync(async (req, res) => {
@@ -348,35 +321,20 @@ const deleteFile = catchAsync(async (req, res) => {
 });
 
 const searchFiles = catchAsync(async (req, res) => {
-  const { q, folderId, type, dateFrom, dateTo, name, description, page = 1, limit = 10 } = req.query;
+  const {q, ...otherQuery} = req.query;
+  const {filters, options} = getPaginateConfig(otherQuery);
 
-  const { files, totalFiles } = await fileService.getFilteredFiles(
-    {
-      q,
-      folderId,
-      type,
-      dateFrom,
-      dateTo,
-      name,
-      description,
-    },
-    { page, limit }
-  );
+  const result = await fileService.getFilteredFiles({
+    q,
+    ...filters,
+  }, options);
 
-  res.json({
-    files,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total: totalFiles,
-      pages: Math.ceil(totalFiles / limit),
-    },
-  });
+  res.json(result);
 });
 
 const getTotalFiles = catchAsync(async (req, res) => {
   const count = await fileService.getTotalFilesCount();
-  res.status(httpStatus.OK).send({ count });
+  res.status(httpStatus.OK).send({count});
 });
 
 module.exports = {
@@ -388,9 +346,8 @@ module.exports = {
   updateFile,
   deleteFile,
   searchFiles,
+  getTotalFiles,
 };
-
-module.exports.getTotalFiles = getTotalFiles;
 ```
 
 #### `src/controllers/folder.controller.js`
@@ -399,17 +356,43 @@ const httpStatus = require('http-status');
 const pick = require('../utils/pick');
 const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
-const { folderService, fileService } = require('../services');
+const {folderService, fileService} = require('../services');
+const {getPaginateConfig} = require('../utils/queryPHandler');
 
 const createFolder = catchAsync(async (req, res) => {
   const folder = await folderService.createFolder(req.body);
   res.status(httpStatus.CREATED).send(folder);
 });
 
+// includeChildCounts=true adds counts of direct child folders/files in each folder
 const getFolders = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'parentId']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await folderService.queryFolders(filter, options);
+  const {includeChildCounts, ...rest} = req.query;
+  const {filters, options} = getPaginateConfig(rest);
+
+  if (includeChildCounts === 'true' || includeChildCounts === true) {
+    options.pipeline = [
+      {
+        $lookup: {
+          from: 'folders',
+          let: {parent: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$parentId', '$$parent']}}}, {$project: {_id: 1}}],
+          as: 'childFoldersDocs',
+        },
+      },
+      {
+        $lookup: {
+          from: 'files',
+          let: {folder: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$folderId', '$$folder']}}}, {$project: {_id: 1}}],
+          as: 'childFilesDocs',
+        },
+      },
+      {$addFields: {counts: {childFolders: {$size: '$childFoldersDocs'}, childFiles: {$size: '$childFilesDocs'}}}},
+      {$project: {childFoldersDocs: 0, childFilesDocs: 0}},
+    ];
+  }
+
+  const result = await folderService.queryFolders(filters, options);
   res.send(result);
 });
 
@@ -437,14 +420,20 @@ const getFolderTree = catchAsync(async (req, res) => {
   res.send(tree);
 });
 
+// Returns both folders and files under the given folderId
 const getFolderContents = catchAsync(async (req, res) => {
-  const { page = 1, limit = 10, name, description, dateFrom, dateTo } = req.query;
+  const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
   const folders = await folderService.getFoldersByParentId(req.params.folderId);
-  const { files, totalFiles } = await fileService.getFilesByFolderId(
+
+  const filesPage = await fileService.getFilesByFolderId(
     req.params.folderId,
-    { name, description, dateFrom, dateTo },
-    { page, limit }
+    {name, description, dateFrom, dateTo},
+    {page, limit}
   );
+
+  const files = filesPage.results || [];
+  const totalFiles = filesPage.totalResults || 0;
+  const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
   res.json({
     folders,
@@ -455,7 +444,7 @@ const getFolderContents = catchAsync(async (req, res) => {
       totalFolders: folders.length,
       totalFiles: totalFiles,
       totalPagesFolders: Math.ceil(folders.length / limit),
-      totalPagesFiles: Math.ceil(totalFiles / limit),
+      totalPagesFiles: totalPagesFiles,
     },
   });
 });
@@ -466,22 +455,18 @@ const getFolderBreadcrumb = catchAsync(async (req, res) => {
 });
 
 const getFilteredFolderContents = catchAsync(async (req, res) => {
-  const { folderId } = req.params;
-  const { q, type, dateFrom, dateTo, name, description, page = 1, limit = 10 } = req.query;
+  const {folderId} = req.params;
+  const {q, type, dateFrom, dateTo, name, description, page = 1, limit = 10} = req.query;
 
   const folders = await folderService.getFoldersByParentId(folderId);
-  const { files, totalFiles } = await fileService.getFilteredFiles(
-    {
-      folderId,
-      q,
-      type,
-      dateFrom,
-      dateTo,
-      name,
-      description,
-    },
-    { page, limit }
+  const filesPage = await fileService.getFilteredFiles(
+    {folderId, q, type, dateFrom, dateTo, name, description},
+    {page, limit}
   );
+
+  const files = filesPage.results || [];
+  const totalFiles = filesPage.totalResults || 0;
+  const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
   res.json({
     folders,
@@ -491,26 +476,26 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
       limit: parseInt(limit),
       totalFolders: folders.length,
       totalFiles: totalFiles,
-      totalPagesFiles: Math.ceil(totalFiles / limit),
+      totalPagesFiles: totalPagesFiles,
     },
   });
 });
 
 const getTotalFolders = catchAsync(async (req, res) => {
   const count = await folderService.getTotalFoldersCount();
-  res.status(httpStatus.OK).send({ count });
+  res.status(httpStatus.OK).send({count});
 });
 
 const getDirectChildFoldersCount = catchAsync(async (req, res) => {
-  const { folderId } = req.params;
+  const {folderId} = req.params;
   const count = await folderService.countChildFolders(folderId);
-  res.status(httpStatus.OK).send({ count });
+  res.status(httpStatus.OK).send({count});
 });
 
 const getDirectChildFilesCount = catchAsync(async (req, res) => {
-  const { folderId } = req.params;
+  const {folderId} = req.params;
   const count = await fileService.countChildFiles(folderId);
-  res.status(httpStatus.OK).send({ count });
+  res.status(httpStatus.OK).send({count});
 });
 
 module.exports = {
@@ -530,28 +515,68 @@ module.exports.getDirectChildFoldersCount = getDirectChildFoldersCount;
 module.exports.getDirectChildFilesCount = getDirectChildFilesCount;
 ```
 
+Example for GET /api/folders/:folderId/contents response:
+```json
+{
+  "folders": [
+    {
+      "_id": "6897ade2f37b626b2aa223ee",
+      "name": "Shubham's great grandson",
+      "parentId": "6897a3e23c73a1737dbe4a91",
+      "path": "Root/Shubham's great grandson/",
+      "description": "this is Shubham's great grandson",
+      "createdAt": "2025-08-09T20:21:54.201Z",
+      "updatedAt": "2025-08-09T20:21:54.201Z",
+      "__v": 0
+    }
+  ],
+  "files": [
+    {
+      "_id": "6897abb7e84a92bed6964887",
+      "name": "file",
+      "originalName": "backend resources.txt",
+      "filePath": "https://res.cloudinary.com/.../backend%20resources",
+      "fileSize": 28905,
+      "mimeType": "text/plain",
+      "folderId": "6897a3e23c73a1737dbe4a91",
+      "createdAt": "2025-08-09T20:12:39.210Z",
+      "updatedAt": "2025-08-09T20:12:39.210Z",
+      "__v": 0
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 200,
+    "totalFolders": 1,
+    "totalFiles": 1,
+    "totalPagesFolders": 1,
+    "totalPagesFiles": 1
+  }
+}
+```
+
+Note for GET /api/folders:
+- use `?includeChildCounts=true` to enrich each folder with `counts.childFolders` and `counts.childFiles`.
+
 #### `src/controllers/sse.controller.js`
 ```javascript
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
-const { progressService, sseService } = require('../services');
+const {progressService, sseService} = require('../services');
 
 const getUploadProgress = catchAsync(async (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'Access-Control-Allow-Origin': '*',
   });
 
-  const { uploadId } = req.params;
-  const sendProgress = (data) => {
-    res.write(`data: ${JSON.stringify(data)}
-
-`);
+  const {uploadId} = req.params;
+  const sendProgress = data => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  // Monitor upload progress from database
   const interval = setInterval(async () => {
     const progress = await progressService.getUploadProgressById(uploadId);
     if (progress) {
@@ -567,7 +592,6 @@ const getUploadProgress = catchAsync(async (req, res) => {
         res.end();
       }
     } else {
-      // If progress record is not found, it might have been cleaned up or never existed
       clearInterval(interval);
       res.end();
     }
@@ -583,19 +607,16 @@ const getFolderUpdates = catchAsync(async (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'Access-Control-Allow-Origin': '*',
   });
 
-  const { folderId } = req.params;
+  const {folderId} = req.params;
 
   const changeStream = sseService.getFolderChangeStream(folderId);
 
-  changeStream.on('change', (change) => {
-    res.write(`event: folderUpdate
-data: ${JSON.stringify(change.fullDocument)}
-
-`);
+  changeStream.on('change', change => {
+    res.write(`event: folderUpdate\ndata: ${JSON.stringify(change.fullDocument)}\n\n`);
   });
 
   req.on('close', () => {
@@ -620,12 +641,6 @@ const httpStatus = require('http-status');
 const {Folder, File} = require('../models');
 const ApiError = require('../utils/ApiError');
 
-/**
- * Build folder tree recursively
- * @param {Array<Object>} folders
- * @param {string|null} parentId
- * @returns {Array<Object>}
- */
 const buildTree = (folders, parentId = null) => {
   const folderTree = [];
   folders.forEach(folder => {
@@ -640,11 +655,6 @@ const buildTree = (folders, parentId = null) => {
   return folderTree;
 };
 
-/**
- * Create a folder
- * @param {Object} folderBody
- * @returns {Promise<Folder>}
- */
 const createFolder = async folderBody => {
   if (await Folder.isNameTaken(folderBody.name, folderBody.parentId)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Folder with this name already exists in the parent folder');
@@ -652,54 +662,26 @@ const createFolder = async folderBody => {
   return Folder.create(folderBody);
 };
 
-/**
- * Query for folders
- * @param {Object} filter - Mongo filter (can include name, parentId)
- * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
- * @returns {Promise<QueryResult>}
- */
 const queryFolders = async (filter, options) => {
   let query = {};
 
   if (filter.name) {
     query.name = new RegExp(filter.name, 'i');
   }
-
-  // If parentId is explicitly null or not provided, query for root folders (parentId: null)
-  // Otherwise, use the provided parentId
   if (filter.parentId === null || filter.parentId === undefined) {
     query.parentId = null;
   } else if (filter.parentId) {
     query.parentId = filter.parentId;
   }
 
-  const folders = await Folder.paginate(query, options);
-  return folders;
+  return Folder.paginate(query, options);
 };
 
-/**
- * Get folder by id
- * @param {ObjectId} id
- * @returns {Promise<Folder>}
- */
-const getFolderById = async id => {
-  return Folder.findById(id);
-};
+const getFolderById = async id => Folder.findById(id);
 
-/**
- * Update folder by id
- * @param {ObjectId} folderId
- * @param {Object} updateBody
- * @returns {Promise<Folder>}
- */
 const updateFolderById = async (folderId, updateBody) => {
   const folder = await getFolderById(folderId);
-  if (!folder) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Folder not found');
-  }
+  if (!folder) throw new ApiError(httpStatus.NOT_FOUND, 'Folder not found');
   if (updateBody.name && (await Folder.isNameTaken(updateBody.name, folder.parentId, folderId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Folder with this name already exists in the parent folder');
   }
@@ -708,30 +690,16 @@ const updateFolderById = async (folderId, updateBody) => {
   return folder;
 };
 
-/**
- * Delete folder by id
- * @param {ObjectId} folderId
- * @returns {Promise<Folder>}
- */
 const deleteFolderById = async folderId => {
   const folder = await getFolderById(folderId);
-  if (!folder) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Folder not found');
-  }
+  if (!folder) throw new ApiError(httpStatus.NOT_FOUND, 'Folder not found');
   await folder.remove();
   return folder;
 };
 
-/**
- * Get folder breadcrumb path
- * @param {ObjectId} folderId
- * @returns {Promise<Array<Object>>}
- */
 const getFolderBreadcrumb = async folderId => {
   const breadcrumb = await Folder.aggregate([
-    {
-      $match: {_id: folderId},
-    },
+    {$match: {_id: folderId}},
     {
       $graphLookup: {
         from: 'folders',
@@ -742,32 +710,16 @@ const getFolderBreadcrumb = async folderId => {
         maxDepth: 10,
       },
     },
-    {
-      $unwind: '$path',
-    },
-    {
-      $project: {
-        _id: '$path._id',
-        name: '$path.name',
-        parentId: '$path.parentId',
-      },
-    },
-    {
-      $sort: {'path._id': 1},
-    },
+    {$unwind: '$path'},
+    {$project: {_id: '$path._id', name: '$path.name', parentId: '$path.parentId'}},
+    {$sort: {'path._id': 1}},
   ]);
   return breadcrumb;
 };
 
-/**
- * Cascade delete folder and its contents
- * @param {ObjectId} folderId
- * @returns {Promise<void>}
- */
 const cascadeDeleteFolder = async folderId => {
   const foldersToDelete = [folderId];
   let currentFolders = [folderId];
-
   while (currentFolders.length > 0) {
     const childFolders = await Folder.find({parentId: {$in: currentFolders}}).select('_id');
     const childFiles = await File.find({folderId: {$in: currentFolders}}).select('_id');
@@ -785,43 +737,13 @@ const cascadeDeleteFolder = async folderId => {
       await File.deleteMany({_id: {$in: childFileIds}});
     }
   }
-
   await Folder.deleteMany({_id: {$in: foldersToDelete}});
 };
 
-/**
- * Get all folders with selected fields for tree building
- * @returns {Promise<Array<Folder>>}
- */
-const getAllFolders = async () => {
-  return Folder.find().select('_id name parentId path');
-};
-
-/**
- * Get folders by parentId
- * @param {ObjectId} parentId
- * @returns {Promise<Array<Folder>>}
- */
-const getFoldersByParentId = async parentId => {
-  return Folder.find({parentId});
-};
-
-/**
- * Get total count of folders
- * @returns {Promise<number>}
- */
-const getTotalFoldersCount = async () => {
-  return Folder.countDocuments();
-};
-
-/**
- * Get count of direct child folders for a given parentId
- * @param {ObjectId|null} parentId - The ID of the parent folder, or null for root
- * @returns {Promise<number>}
- */
-const countChildFolders = async parentId => {
-  return Folder.countDocuments({parentId});
-};
+const getAllFolders = async () => Folder.find().select('_id name parentId path');
+const getFoldersByParentId = async parentId => Folder.find({parentId});
+const getTotalFoldersCount = async () => Folder.countDocuments();
+const countChildFolders = async parentId => Folder.countDocuments({parentId});
 
 module.exports = {
   buildTree,
@@ -846,167 +768,78 @@ const {File} = require('../models');
 const ApiError = require('../utils/ApiError');
 const {fileUploadService} = require('../microservices');
 
-/**
- * Create a file
- * @param {Object} fileDetails - Object containing file data and metadata
- * @param {Buffer} fileDetails.buffer - The file buffer
- * @param {string} fileDetails.originalName - The original name of the file
- * @param {string} fileDetails.mimeType - The mime type of the file
- * @param {number} fileDetails.fileSize - The size of the file
- * @param {ObjectId} fileDetails.folderId - The folder ID
- * @returns {Promise<File>}
- */
 const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) => {
-  // Upload file to Cloudinary
-  const uploadResult = await fileUploadService.uploadFileToCloudinary(
-    buffer,
-    `files/${folderId || 'root'}`,
-    originalName
-  );
-
+  const uploadResult = await fileUploadService.uploadFileToCloudinary(buffer, `files/${folderId || 'root'}`, originalName);
   const fileBody = {
-    name: uploadResult.original_filename || originalName, // Use original_filename from Cloudinary or originalName
-    originalName: originalName,
-    filePath: uploadResult.secure_url, // Store the secure URL from Cloudinary
-    fileSize: fileSize,
-    mimeType: mimeType,
-    folderId: folderId,
+    name: uploadResult.original_filename || originalName,
+    originalName,
+    filePath: uploadResult.secure_url,
+    fileSize,
+    mimeType,
+    folderId,
   };
-
   return File.create(fileBody);
 };
 
-/**
- * Query for files
- * @param {Object} filter - Mongo filter
- * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
- * @returns {Promise<QueryResult>}
- */
-const queryFiles = async (filter, options) => {
-  const files = await File.paginate(filter, options);
-  return files;
+// Paginated query
+const queryFiles = async (filters, options) => {
+  const mongoFilters = {};
+  if (filters.name) mongoFilters.name = new RegExp(filters.name, 'i');
+  if (filters.description) mongoFilters.description = new RegExp(filters.description, 'i');
+  if (filters.folderId) mongoFilters.folderId = filters.folderId;
+  if (filters.mimeType) mongoFilters.mimeType = new RegExp(filters.mimeType, 'i');
+  if (filters.dateFrom || filters.dateTo) {
+    mongoFilters.createdAt = {};
+    if (filters.dateFrom) mongoFilters.createdAt.$gte = new Date(filters.dateFrom);
+    if (filters.dateTo) mongoFilters.createdAt.$lte = new Date(filters.dateTo);
+  }
+  return File.paginate(mongoFilters, options || {});
 };
 
-/**
- * Get file by id
- * @param {ObjectId} id
- * @returns {Promise<File>}
- */
-const getFileById = async id => {
-  return File.findById(id);
-};
+const getFileById = async id => File.findById(id);
 
-/**
- * Update file by id
- * @param {ObjectId} fileId
- * @param {Object} updateBody
- * @returns {Promise<File>}
- */
 const updateFileById = async (fileId, updateBody) => {
   const file = await getFileById(fileId);
-  if (!file) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
-  }
+  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   Object.assign(file, updateBody);
   await file.save();
   return file;
 };
 
-/**
- * Delete file by id and clean up physical file (now from Cloudinary)
- * @param {ObjectId} fileId
- * @returns {Promise<File>}
- */
 const deleteFileById = async fileId => {
   const file = await getFileById(fileId);
-  if (!file) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
-  }
-  const cloudinaryPublicId = file.filePath
-    .split('/')
-    .pop()
-    .split('.')[0]; // Extract public ID from URL
+  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
+  const cloudinaryPublicId = file.filePath.split('/').pop().split('.')[0];
   await fileUploadService.deleteFileFromCloudinary(cloudinaryPublicId);
   await file.remove();
-
   return file;
 };
 
-/**
- * Get files by folder id
- * @param {ObjectId} folderId
- * @returns {Promise<Array<File>>}
- */
 const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => {
   return getFilteredFiles({...filterParams, folderId}, options);
 };
 
-/**
- * Get filtered files
- * @param {Object} filter - Mongo filter (includes q, folderId, type, dateFrom, dateTo, name, description)
- * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
- * @returns {Promise<QueryResult>}
- */
+// Filtered paginated query (supports q/name/description/type/date range)
 const getFilteredFiles = async (filter, options) => {
   let query = {};
-  if (filter.folderId) {
-    query.folderId = filter.folderId;
-  }
-
-  // Prioritize text search (q) if provided, as it covers both name and description
+  if (filter.folderId) query.folderId = filter.folderId;
   if (filter.q) {
     query.$text = {$search: filter.q};
   } else {
-    // Apply individual name/description regex searches if q is not present
-    if (filter.name) {
-      query.name = new RegExp(filter.name, 'i');
-    }
-    if (filter.description) {
-      query.description = new RegExp(filter.description, 'i');
-    }
+    if (filter.name) query.name = new RegExp(filter.name, 'i');
+    if (filter.description) query.description = new RegExp(filter.description, 'i');
   }
-
-  if (filter.type) {
-    query.mimeType = new RegExp(filter.type, 'i');
-  }
+  if (filter.type) query.mimeType = new RegExp(filter.type, 'i');
   if (filter.dateFrom || filter.dateTo) {
     query.createdAt = {};
     if (filter.dateFrom) query.createdAt.$gte = new Date(filter.dateFrom);
     if (filter.dateTo) query.createdAt.$lte = new Date(filter.dateTo);
   }
-
-  const files = await File.find(query)
-    .populate('folderId')
-    .skip((options.page - 1) * options.limit)
-    .limit(parseInt(options.limit));
-
-  const totalFiles = await File.countDocuments(query);
-
-  return {files, totalFiles};
+  return File.paginate(query, options || {});
 };
 
-/**
- * Get total count of files
- * @returns {Promise<number>}
- */
-const getTotalFilesCount = async () => {
-  return File.countDocuments();
-};
-
-/**
- * Get count of direct child files for a given folderId
- * @param {ObjectId} folderId - The ID of the parent folder
- * @returns {Promise<number>}
- */
-const countChildFiles = async folderId => {
-  return File.countDocuments({folderId});
-};
+const getTotalFilesCount = async () => File.countDocuments();
+const countChildFiles = async folderId => File.countDocuments({folderId});
 
 module.exports = {
   createFile,
@@ -1025,13 +858,6 @@ module.exports = {
 ```javascript
 const {UploadProgress} = require('../models');
 
-/**
- * Update upload progress
- * @param {string} uploadId
- * @param {number} uploadedBytes
- * @param {number} totalBytes
- * @returns {Promise<UploadProgress>}
- */
 const updateUploadProgress = async (uploadId, uploadedBytes, totalBytes) => {
   const progress = (uploadedBytes / totalBytes) * 100;
   const status = progress === 100 ? 'completed' : 'uploading';
@@ -1042,20 +868,8 @@ const updateUploadProgress = async (uploadId, uploadedBytes, totalBytes) => {
   );
 };
 
-/**
- * Get upload progress by id
- * @param {string} uploadId
- * @returns {Promise<UploadProgress>}
- */
-const getUploadProgressById = async uploadId => {
-  return UploadProgress.findById(uploadId);
-};
+const getUploadProgressById = async uploadId => UploadProgress.findById(uploadId);
 
-/**
- * Clean up completed or failed uploads
- * @param {string} uploadId
- * @returns {Promise<void>}
- */
 const cleanupUploadProgress = async uploadId => {
   await UploadProgress.findByIdAndDelete(uploadId);
 };
@@ -1071,11 +885,6 @@ module.exports = {
 ```javascript
 const {Folder} = require('../models');
 
-/**
- * Get folder change stream
- * @param {ObjectId} folderId
- * @returns {ChangeStream}
- */
 const getFolderChangeStream = folderId => {
   return Folder.watch([
     {$match: {'fullDocument.parentId': folderId}},
@@ -1087,356 +896,3 @@ module.exports = {
   getFolderChangeStream,
 };
 ```
-
-#### `src/services/index.js`
-```javascript
-module.exports.userService = require('./user.service');
-module.exports.authService = require('./auth.service');
-module.exports.folderService = require('./folder.service');
-module.exports.fileService = require('./file.service');
-module.exports.progressService = require('./progress.service');
-module.exports.sseService = require('./sse.service');
-module.exports.fileUploadService = require('../microservices/fileUpload.service');
-```
-
----
-### Microservices
----
-
-#### `src/microservices/fileUpload.service.js`
-```javascript
-const cloudinary = require('cloudinary').v2;
-const config = require('../config/config');
-
-// Configure Cloudinary using environment variables
-cloudinary.config({
-  cloud_name: config.cloudinary.cloudName,
-  api_key: config.cloudinary.apiKey,
-  api_secret: config.cloudinary.apiSecret,
-  secure: true,
-});
-
-/**
- * Upload a file to Cloudinary
- * @param {Buffer} fileBuffer - The file buffer to upload
- * @param {string} folder - The folder in Cloudinary to upload to
- * @param {string} originalName - The original name of the file (for public_id)
- * @returns {Promise<Object>}
- */
-const uploadFileToCloudinary = async (fileBuffer, folder, originalName) => {
-  return new Promise((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream(
-        {
-          resource_type: 'auto',
-          folder: folder,
-          public_id: originalName.split('.')[0], // Use original name (without extension) as public_id
-        },
-        (error, result) => {
-          if (error) {
-            return reject(error);
-          }
-          resolve(result);
-        }
-      )
-      .end(fileBuffer);
-  });
-};
-
-/**
- * Delete a file from Cloudinary
- * @param {string} publicId - The public ID of the file to delete
- * @returns {Promise<Object>}
- */
-const deleteFileFromCloudinary = async publicId => {
-  return cloudinary.uploader.destroy(publicId);
-};
-
-module.exports = {
-  uploadFileToCloudinary,
-  deleteFileFromCloudinary,
-};
-```
-
-#### `src/microservices/index.js`
-```javascript
-module.exports.fileUploadService = require('./fileUpload.service');
-module.exports.notificationService = require('./notification.service');
-module.exports.smsService = require('./sms.service');
-```
-
----
-### Models
----
-
-#### `src/models/file.model.js`
-```javascript
-const mongoose = require('mongoose');
-const {paginate} = require('./plugins/paginate');
-
-const fileSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  originalName: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  filePath: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  fileSize: {
-    type: Number,
-    required: true,
-  },
-  mimeType: {
-    type: String,
-    required: true,
-  },
-  folderId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Folder',
-    // required: true,
-  },
-  description: {
-    type: String,
-    trim: true,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-fileSchema.index({folderId: 1});
-fileSchema.index({name: 1});
-fileSchema.index({name: 'text', description: 'text'});
-
-// add plugin that converts mongoose to json
-fileSchema.plugin(paginate);
-
-/**
- * @typedef File
- */
-const File = mongoose.model('File', fileSchema);
-
-module.exports = File;
-```
-
-#### `src/models/folder.model.js`
-```javascript
-const mongoose = require('mongoose');
-const {paginate} = require('./plugins/paginate');
-
-const folderSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  parentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Folder',
-    default: null,
-  },
-  path: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  description: {
-    type: String,
-    trim: true,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-folderSchema.index({parentId: 1});
-folderSchema.index({path: 1});
-
-// add plugin that converts mongoose to json
-folderSchema.plugin(paginate);
-
-/**
- * Check if folder name is taken
- * @param {string} name - The folder's name
- * @param {ObjectId} [parentId] - The folder's parentId
- * @param {ObjectId} [excludeFolderId] - The id of the folder to be excluded
- * @returns {Promise<boolean>}
- */
-folderSchema.statics.isNameTaken = async function(name, parentId, excludeFolderId) {
-  const folder = await this.findOne({name, parentId, _id: {$ne: excludeFolderId}});
-  return !!folder;
-};
-
-/**
- * @typedef Folder
- */
-const Folder = mongoose.model('Folder', folderSchema);
-
-module.exports = Folder;
-```
-
-#### `src/models/uploadprogress.model.js`
-```javascript
-const mongoose = require('mongoose');
-const {paginate} = require('./plugins/paginate');
-
-const uploadProgressSchema = new mongoose.Schema({
-  _id: {
-    type: String,
-    required: true,
-  },
-  fileName: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  progress: {
-    type: Number,
-    default: 0,
-  },
-  status: {
-    type: String,
-    enum: ['uploading', 'completed', 'failed'],
-    default: 'uploading',
-  },
-  fileSize: {
-    type: Number,
-  },
-  uploadedBytes: {
-    type: Number,
-    default: 0,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-uploadProgressSchema.index({status: 1});
-
-// add plugin that converts mongoose to json
-uploadProgressSchema.plugin(paginate);
-
-/**
- * @typedef UploadProgress
- */
-const UploadProgress = mongoose.model('UploadProgress', uploadProgressSchema);
-
-module.exports = UploadProgress;
-```
-
-#### `src/models/index.js`
-```javascript
-const {User, Client} = require('./user.model');
-const Folder = require('./folder.model');
-const File = require('./file.model');
-const UploadProgress = require('./uploadprogress.model');
-
-module.exports = {
-  User,
-  Client,
-  Folder,
-  File,
-  UploadProgress,
-};
-```
-
----
-### Constants
----
-
-#### `src/constants/fileTypes.js`
-```javascript
-const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/tiff'];
-const DOCUMENT_TYPES = [
-  'application/pdf',
-  'application/msword', // .doc
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-  'application/vnd.ms-excel', // .xls
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-  'application/vnd.ms-powerpoint', // .ppt
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-  'text/plain', // .txt
-  'text/csv', // .csv
-];
-
-const ALL_ALLOWED_FILE_TYPES = [...IMAGE_TYPES, ...DOCUMENT_TYPES];
-
-module.exports = {
-  IMAGE_TYPES,
-  DOCUMENT_TYPES,
-  ALL_ALLOWED_FILE_TYPES,
-};
-```
-
-#### `src/constants/index.js`
-```javascript
-const dbOptions = {
-  page: 1,
-  limit: 10,
-  sortBy: 'createdAt',
-  sortOrder: 'asc',
-};
-
-const {ALL_ALLOWED_FILE_TYPES} = require('./fileTypes');
-
-module.exports = {
-  dbOptions,
-  fileTypes: ALL_ALLOWED_FILE_TYPES,
-};
-```
-
----
-### Middlewares
----
-
-#### `src/middlewares/upload.js`
-```javascript
-const multer = require('multer');
-const {fileTypes} = require('../constants');
-const ApiError = require('../utils/ApiError');
-const httpStatus = require('http-status');
-
-const storage = multer.memoryStorage();
-
-const fileFilter = (req, file, cb) => {
-  if (fileTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new ApiError(httpStatus.BAD_REQUEST, 'Invalid file type.'), false);
-  }
-};
-
-const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
-  },
-});
-
-module.exports = upload;
-```
-

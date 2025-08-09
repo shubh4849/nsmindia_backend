@@ -26,10 +26,9 @@ const uploadFile = catchAsync(async (req, res) => {
     folderId: req.body.folderId,
   });
 
-  // Create upload progress entry
   await progressService.updateUploadProgress(uploadId, req.file.size, req.file.size);
 
-  res.status(httpStatus.CREATED).send({uploadId, fileId: file._id});
+  res.status(httpStatus.CREATED).send({uploadId, file});
 });
 
 const getFiles = catchAsync(async (req, res) => {
@@ -51,7 +50,7 @@ const downloadFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.filePath); // Redirect to Cloudinary URL for download
+  res.redirect(file.filePath);
 });
 
 const previewFile = catchAsync(async (req, res) => {
@@ -59,7 +58,7 @@ const previewFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.filePath); // Redirect to Cloudinary URL for preview
+  res.redirect(file.filePath);
 });
 
 const updateFile = catchAsync(async (req, res) => {
