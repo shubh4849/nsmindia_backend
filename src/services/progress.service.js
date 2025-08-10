@@ -1,10 +1,5 @@
 const {UploadProgress} = require('../models');
 
-/**
- * Initialize upload progress with 0%
- * @param {string} uploadId
- * @param {{ fileName?: string, fileSize?: number }} meta
- */
 const initUploadProgress = async (uploadId, meta = {}) => {
   const {fileName, fileSize} = meta;
   return UploadProgress.findByIdAndUpdate(
@@ -23,16 +18,6 @@ const initUploadProgress = async (uploadId, meta = {}) => {
   );
 };
 
-/**
- * Update upload progress
- * @param {string} uploadId
- * @param {number} uploadedBytes
- * @param {number} totalBytes
- * @param {Object} [meta]
- * @param {string} [meta.fileName]
- * @param {('uploading'|'completed'|'failed')} [meta.status]
- * @returns {Promise<UploadProgress>}
- */
 const updateUploadProgress = async (uploadId, uploadedBytes, totalBytes, meta = {}) => {
   const progress = totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0;
   const status = meta.status || (progress >= 100 ? 'completed' : 'uploading');
@@ -48,9 +33,6 @@ const updateUploadProgress = async (uploadId, uploadedBytes, totalBytes, meta = 
   return UploadProgress.findByIdAndUpdate(uploadId, update, {new: true, upsert: true});
 };
 
-/**
- * Mark upload as completed
- */
 const completeUploadProgress = async uploadId => {
   return UploadProgress.findByIdAndUpdate(
     uploadId,
@@ -59,38 +41,20 @@ const completeUploadProgress = async uploadId => {
   );
 };
 
-/**
- * Mark upload as failed
- */
 const failUploadProgress = async (uploadId, meta = {}) => {
   const update = {status: 'failed', updatedAt: Date.now()};
   if (meta.fileName) update.fileName = meta.fileName;
   return UploadProgress.findByIdAndUpdate(uploadId, update, {new: true});
 };
 
-/**
- * Get upload progress by id
- * @param {string} uploadId
- * @returns {Promise<UploadProgress>}
- */
 const getUploadProgressById = async uploadId => {
   return UploadProgress.findById(uploadId);
 };
 
-/**
- * Clean up completed or failed uploads
- * @param {string} uploadId
- * @returns {Promise<void>}
- */
 const cleanupUploadProgress = async uploadId => {
   await UploadProgress.findByIdAndDelete(uploadId);
 };
 
-/**
- * Throttle calls to a function
- * @param {Function} fn
- * @param {number} intervalMs
- */
 function throttle(fn, intervalMs) {
   let last = 0;
   let timeout = null;

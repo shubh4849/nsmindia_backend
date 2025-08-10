@@ -17,7 +17,6 @@ app.listen(config.port, () => {
   console.log(`NSM INDIA BACKEND app listening on port ${config.port}!`);
 });
 
-// ------------- Don't Modify  -------------
 const exitHandler = () => {
   if (server) {
     server.close(() => {
@@ -43,4 +42,3 @@ process.on('SIGTERM', () => {
     server.close();
   }
 });
-// ------------- Don't Modify  -------------

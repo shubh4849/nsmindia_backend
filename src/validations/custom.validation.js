@@ -46,7 +46,6 @@ const validateObjectBySchema = schema => (value, helpers) => {
   return validatedValue;
 };
 
-// convert comma separated values to array of strings
 const convertCSVToArray = (value, helpers) => {
   const arr = value.split(',');
   const arrValidated = arr.every(val => Joi.string().validate(val).error === undefined);

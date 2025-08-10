@@ -35,7 +35,7 @@ const uploadProgressSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  // TTL cleanup field (auto-delete after ~1h by default)
+
   expiresAt: {
     type: Date,
     default: () => new Date(Date.now() + 60 * 60 * 1000),
@@ -45,12 +45,8 @@ const uploadProgressSchema = new mongoose.Schema({
 
 uploadProgressSchema.index({status: 1});
 
-// add plugin that converts mongoose to json
 uploadProgressSchema.plugin(paginate);
 
-/**
- * @typedef UploadProgress
- */
 const UploadProgress = mongoose.model('UploadProgress', uploadProgressSchema);
 
 module.exports = UploadProgress;

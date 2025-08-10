@@ -20,7 +20,6 @@ const initUpload = catchAsync(async (req, res) => {
 });
 
 const uploadFile = catchAsync(async (req, res) => {
-  // Streaming upload with Busboy
   const contentType = req.headers['content-type'];
   if (!contentType || !contentType.startsWith('multipart/form-data')) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Content-Type must be multipart/form-data');
@@ -36,22 +35,20 @@ const uploadFile = catchAsync(async (req, res) => {
   let uploadedBytes = 0;
   let finished = false;
 
-  // Total size hints
   const headerSize = Number(req.headers['x-file-size']);
   if (!Number.isNaN(headerSize)) totalBytes = headerSize;
   const contentLength = Number(req.headers['content-length']);
   if (!Number.isNaN(contentLength)) {
-    totalBytes = totalBytes || contentLength; // includes multipart overhead (approximate)
+    totalBytes = totalBytes || contentLength;
   }
 
-  // Throttled progress updater
   const throttledUpdate = progressService.throttle((bytes, size, meta) => {
     if (!uploadId) return;
     progressService.updateUploadProgress(uploadId, bytes, size || 0, meta).catch(() => {});
   }, 200);
 
   busboy.on('field', (name, val) => {
-    if (name === 'uploadId') uploadId = uploadId || val; // prefer header/query if present
+    if (name === 'uploadId') uploadId = uploadId || val;
     if (name === 'folderId') folderId = val;
     if (name === 'fileName') fileName = val;
     if (name === 'fileSize') {
@@ -83,7 +80,6 @@ const uploadFile = catchAsync(async (req, res) => {
       return;
     }
 
-    // Ensure progress record exists
     const ensureInit = async () => {
       await progressService.initUploadProgress(uploadId, {fileName, fileSize: totalBytes});
     };
@@ -92,7 +88,6 @@ const uploadFile = catchAsync(async (req, res) => {
       const folderPath = `files/${folderId || 'root'}`;
       const base = fileUploadService.sanitizeBaseName(fileName || filename);
 
-      // Tap data events to count bytes
       file.on('data', chunk => {
         uploadedBytes += chunk.length;
         throttledUpdate(uploadedBytes, totalBytes, {fileName, status: 'uploading'});
@@ -111,7 +106,6 @@ const uploadFile = catchAsync(async (req, res) => {
           });
       });
 
-      // Pipe to Cloudinary upload_stream
       fileUploadService
         .uploadStreamToCloudinary({
           stream: file,
@@ -134,7 +128,6 @@ const uploadFile = catchAsync(async (req, res) => {
             });
           } catch {}
 
-          // Persist file record from Cloudinary result
           const created = await fileService.createFileRecordFromUploadResult({
             uploadResult,
             originalName: fileName,

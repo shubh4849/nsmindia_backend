@@ -11,7 +11,6 @@ const createFolder = catchAsync(async (req, res) => {
 });
 
 const getFolders = catchAsync(async (req, res) => {
-  // Extract includeChildCounts separately so it doesn't enter filters
   const {includeChildCounts, ...rest} = req.query;
   const {filters, options} = getPaginateConfig(rest);
 
@@ -174,27 +173,23 @@ const getDirectChildFilesCount = catchAsync(async (req, res) => {
 });
 
 const unifiedSearch = catchAsync(async (req, res) => {
-  // Only these three filters are supported
   const {name, description, dateFrom, dateTo, page = 1, limit = 10, includeChildCounts} = req.query;
 
-  // Folders filter
   const folderFilter = {};
-  if (name) folderFilter.name = name; // regex in service
-  if (description) folderFilter.description = description; // regex in service
+  if (name) folderFilter.name = name;
+  if (description) folderFilter.description = description;
   if (dateFrom || dateTo) {
     folderFilter.createdAt = {};
     if (dateFrom) folderFilter.createdAt.$gte = new Date(dateFrom);
     if (dateTo) folderFilter.createdAt.$lte = new Date(dateTo);
   }
 
-  // Files filter (no description filter for files)
   const fileFilter = {};
   const hasFileFilters = Boolean(name) || Boolean(dateFrom) || Boolean(dateTo);
-  if (name) fileFilter.name = name; // matches originalName
+  if (name) fileFilter.name = name;
   if (dateFrom) fileFilter.dateFrom = dateFrom;
   if (dateTo) fileFilter.dateTo = dateTo;
 
-  // Query in parallel; files query only if relevant filters present
   const [foldersPage, filesPage] = await Promise.all([
     folderService.queryFolders(folderFilter, {page, limit}),
     hasFileFilters
@@ -204,7 +199,6 @@ const unifiedSearch = catchAsync(async (req, res) => {
 
   let folders = foldersPage.results || [];
 
-  // Optionally enrich with child counts (for small page sizes this is acceptable)
   if (includeChildCounts === 'true' || includeChildCounts === true) {
     folders = await Promise.all(
       folders.map(async f => {

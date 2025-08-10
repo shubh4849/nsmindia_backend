@@ -1,14 +1,14 @@
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/tiff'];
 const DOCUMENT_TYPES = [
   'application/pdf',
-  'application/msword', // .doc
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-  'application/vnd.ms-excel', // .xls
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-  'application/vnd.ms-powerpoint', // .ppt
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-  'text/plain', // .txt
-  'text/csv', // .csv
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
 ];
 const VIDEO_TYPES = ['video/mp4'];
 

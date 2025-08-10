@@ -8,7 +8,7 @@ const getUploadProgress = catchAsync(async (req, res) => {
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no', // nginx
+    'X-Accel-Buffering': 'no',
   });
   if (res.flushHeaders) res.flushHeaders();
 
@@ -18,11 +18,10 @@ const getUploadProgress = catchAsync(async (req, res) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  // immediate connected frame
   send('connected', {uploadId, status: 'uploading', progress: 0});
 
   const startedAt = Date.now();
-  const maxWaitMs = 15 * 1000; // wait up to 15s for record to appear
+  const maxWaitMs = 15 * 1000;
 
   const interval = setInterval(async () => {
     try {
@@ -43,7 +42,6 @@ const getUploadProgress = catchAsync(async (req, res) => {
           res.end();
         }
       } else if (Date.now() - startedAt > maxWaitMs) {
-        // give up after timeout but leave connection to be closed by client
         send('timeout', {uploadId, status: 'uploading', progress: 0});
       }
     } catch (e) {
@@ -53,7 +51,6 @@ const getUploadProgress = catchAsync(async (req, res) => {
     }
   }, 1000);
 
-  // heartbeat to keep proxies happy
   const heartbeat = setInterval(() => {
     send('ping', {t: Date.now()});
   }, 10000);

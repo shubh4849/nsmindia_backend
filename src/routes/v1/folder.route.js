@@ -10,11 +10,10 @@ router
   .post(validate(folderValidation.createFolder), folderController.createFolder)
   .get(folderController.getFolders);
 
-// Specific routes must be declared before generic parameterized routes
 router.get('/tree', folderController.getFolderTree);
 router.get('/root/contents', folderController.getRootContents);
 router.get('/search', folderController.unifiedSearch);
-router.get('/count', folderController.getTotalFolders); // New route for total folders count
+router.get('/count', folderController.getTotalFolders);
 
 router
   .route('/:folderId')
@@ -26,7 +25,6 @@ router.get('/:folderId/contents', validate(folderValidation.getFolder), folderCo
 router.get('/:folderId/breadcrumb', validate(folderValidation.getFolder), folderController.getFolderBreadcrumb);
 router.get('/:folderId/filtered', validate(folderValidation.getFolder), folderController.getFilteredFolderContents);
 
-// New routes for direct child counts
 router.get(
   '/:folderId/child-folders/count',
   validate(folderValidation.getFolder),

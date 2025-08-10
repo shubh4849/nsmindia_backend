@@ -2,12 +2,6 @@ const httpStatus = require('http-status');
 const {Folder, File} = require('../models');
 const ApiError = require('../utils/ApiError');
 
-/**
- * Build folder tree recursively
- * @param {Array<Object>} folders
- * @param {string|null} parentId
- * @returns {Array<Object>}
- */
 const buildTree = (folders, parentId = null) => {
   const folderTree = [];
   folders.forEach(folder => {
@@ -22,11 +16,6 @@ const buildTree = (folders, parentId = null) => {
   return folderTree;
 };
 
-/**
- * Create a folder
- * @param {Object} folderBody
- * @returns {Promise<Folder>}
- */
 const createFolder = async folderBody => {
   if (await Folder.isNameTaken(folderBody.name, folderBody.parentId)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Folder with this name already exists in the parent folder');
@@ -34,15 +23,6 @@ const createFolder = async folderBody => {
   return Folder.create(folderBody);
 };
 
-/**
- * Query for folders
- * @param {Object} filter - Mongo filter (can include name, parentId)
- * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
- * @returns {Promise<QueryResult>}
- */
 const queryFolders = async (filter, options) => {
   let query = {};
 
@@ -50,9 +30,8 @@ const queryFolders = async (filter, options) => {
     query.name = new RegExp(filter.name, 'i');
   }
 
-  // Apply parentId filter only if explicitly provided in filter (including null)
   if (Object.prototype.hasOwnProperty.call(filter, 'parentId')) {
-    query.parentId = filter.parentId; // may be null for root-only
+    query.parentId = filter.parentId;
   }
 
   if (filter.description) query.description = new RegExp(filter.description, 'i');
@@ -62,21 +41,10 @@ const queryFolders = async (filter, options) => {
   return folders;
 };
 
-/**
- * Get folder by id
- * @param {ObjectId} id
- * @returns {Promise<Folder>}
- */
 const getFolderById = async id => {
   return Folder.findById(id);
 };
 
-/**
- * Update folder by id
- * @param {ObjectId} folderId
- * @param {Object} updateBody
- * @returns {Promise<Folder>}
- */
 const updateFolderById = async (folderId, updateBody) => {
   const folder = await getFolderById(folderId);
   if (!folder) {
@@ -90,11 +58,6 @@ const updateFolderById = async (folderId, updateBody) => {
   return folder;
 };
 
-/**
- * Delete folder by id
- * @param {ObjectId} folderId
- * @returns {Promise<Folder>}
- */
 const deleteFolderById = async folderId => {
   const folder = await getFolderById(folderId);
   if (!folder) {
@@ -104,11 +67,6 @@ const deleteFolderById = async folderId => {
   return folder;
 };
 
-/**
- * Get folder breadcrumb path
- * @param {ObjectId} folderId
- * @returns {Promise<Array<Object>>}
- */
 const getFolderBreadcrumb = async folderId => {
   const breadcrumb = await Folder.aggregate([
     {
@@ -141,11 +99,6 @@ const getFolderBreadcrumb = async folderId => {
   return breadcrumb;
 };
 
-/**
- * Cascade delete folder and its contents
- * @param {ObjectId} folderId
- * @returns {Promise<void>}
- */
 const cascadeDeleteFolder = async folderId => {
   const foldersToDelete = [folderId];
   let currentFolders = [folderId];
@@ -171,36 +124,18 @@ const cascadeDeleteFolder = async folderId => {
   await Folder.deleteMany({_id: {$in: foldersToDelete}});
 };
 
-/**
- * Get all folders with selected fields for tree building
- * @returns {Promise<Array<Folder>>}
- */
 const getAllFolders = async () => {
   return Folder.find().select('_id name parentId path');
 };
 
-/**
- * Get folders by parentId
- * @param {ObjectId} parentId
- * @returns {Promise<Array<Folder>>}
- */
 const getFoldersByParentId = async parentId => {
   return Folder.find({parentId});
 };
 
-/**
- * Get total count of folders
- * @returns {Promise<number>}
- */
 const getTotalFoldersCount = async () => {
   return Folder.countDocuments();
 };
 
-/**
- * Get count of direct child folders for a given parentId
- * @param {ObjectId|null} parentId - The ID of the parent folder, or null for root
- * @returns {Promise<number>}
- */
 const countChildFolders = async parentId => {
   return Folder.countDocuments({parentId});
 };

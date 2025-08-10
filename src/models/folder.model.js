@@ -34,24 +34,13 @@ const folderSchema = new mongoose.Schema({
 folderSchema.index({parentId: 1});
 folderSchema.index({path: 1});
 
-// add plugin that converts mongoose to json
 folderSchema.plugin(paginate);
 
-/**
- * Check if folder name is taken
- * @param {string} name - The folder's name
- * @param {ObjectId} [parentId] - The folder's parentId
- * @param {ObjectId} [excludeFolderId] - The id of the folder to be excluded
- * @returns {Promise<boolean>}
- */
 folderSchema.statics.isNameTaken = async function(name, parentId, excludeFolderId) {
   const folder = await this.findOne({name, parentId, _id: {$ne: excludeFolderId}});
   return !!folder;
 };
 
-/**
- * @typedef Folder
- */
 const Folder = mongoose.model('Folder', folderSchema);
 
 module.exports = Folder;

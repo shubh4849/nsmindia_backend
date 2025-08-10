@@ -4,7 +4,6 @@ const ApiError = require('../utils/ApiError');
 const {fileUploadService} = require('../microservices');
 const {v4: uuidv4} = require('uuid');
 
-// Helper to derive Cloudinary public_id and resource_type from secure_url (fallback)
 function deriveCloudinaryIdentifiers(secureUrl) {
   try {
     const url = new URL(secureUrl);
@@ -12,10 +11,10 @@ function deriveCloudinaryIdentifiers(secureUrl) {
     const uploadIndex = parts.findIndex(p => p === 'upload');
     if (uploadIndex === -1) return {publicId: null, resourceType: 'raw'};
     const resourceType = parts[uploadIndex - 1] || 'raw';
-    const afterUpload = parts.slice(uploadIndex + 1); // may contain version and encoded segments
+    const afterUpload = parts.slice(uploadIndex + 1);
     const afterVersion = afterUpload[0] && /^v\d+/.test(afterUpload[0]) ? afterUpload.slice(1) : afterUpload;
     if (afterVersion.length === 0) return {publicId: null, resourceType};
-    // Decode each segment to restore spaces and special chars in public_id
+
     const decodedSegments = afterVersion.map(seg => {
       try {
         return decodeURIComponent(seg);
@@ -32,9 +31,6 @@ function deriveCloudinaryIdentifiers(secureUrl) {
   }
 }
 
-/**
- * Create a file with a simple, S3-like key structure in Cloudinary
- */
 const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) => {
   const folderPath = `files/${folderId || 'root'}`;
   const base = fileUploadService.sanitizeBaseName(originalName);
@@ -51,10 +47,10 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
     name: base || originalName,
     originalName,
     filePath: uploadResult.secure_url,
-    publicId: uploadResult.public_id, // e.g., files/<folderId>/<uuid>-<base>
-    key: uploadResult.public_id, // mirror for S3-like naming
-    resourceType: uploadResult.resource_type, // image | raw | video
-    format: uploadResult.format, // e.g., jpg, pdf, xlsx
+    publicId: uploadResult.public_id,
+    key: uploadResult.public_id,
+    resourceType: uploadResult.resource_type,
+    format: uploadResult.format,
     deliveryType: 'upload',
     fileSize,
     mimeType,
@@ -63,9 +59,6 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
   return File.create(fileBody);
 };
 
-/**
- * Create a DB record from an existing Cloudinary upload result
- */
 const createFileRecordFromUploadResult = async ({uploadResult, originalName, mimeType, fileSize, folderId}) => {
   const base = fileUploadService.sanitizeBaseName(originalName || uploadResult.original_filename || 'file');
   const fileBody = {
@@ -84,9 +77,6 @@ const createFileRecordFromUploadResult = async ({uploadResult, originalName, mim
   return File.create(fileBody);
 };
 
-/**
- * Query for files (supports paginate plugin options)
- */
 const queryFiles = async (filters, options) => {
   const mongoFilters = {};
   if (filters.name) mongoFilters.name = new RegExp(filters.name, 'i');
@@ -101,10 +91,8 @@ const queryFiles = async (filters, options) => {
   return File.paginate(mongoFilters, options || {});
 };
 
-/** Get file by id */
 const getFileById = async id => File.findById(id);
 
-/** Update file by id */
 const updateFileById = async (fileId, updateBody) => {
   const file = await getFileById(fileId);
   if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
@@ -113,14 +101,10 @@ const updateFileById = async (fileId, updateBody) => {
   return file;
 };
 
-/**
- * Delete file by id and clean up Cloudinary asset
- */
 const deleteFileById = async fileId => {
   const file = await getFileById(fileId);
   if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
 
-  // Prefer stored identifiers; fall back to URL derivation
   let publicId = file.key || file.publicId;
   let resourceType = file.resourceType;
   if (!publicId || !resourceType) {
@@ -130,7 +114,6 @@ const deleteFileById = async fileId => {
   }
   console.log('[DeleteFile] Identifiers', {publicId, resourceType, url: file.filePath});
 
-  // Best-effort Cloudinary cleanup
   try {
     if (publicId) {
       const destroyRes = await fileUploadService.deleteFileFromCloudinary(publicId, {
@@ -146,7 +129,6 @@ const deleteFileById = async fileId => {
     console.error('[DeleteFile] Cloudinary destroy error', err);
   }
 
-  // Remove DB record
   try {
     await file.deleteOne();
     console.log('[DeleteFile] Mongo document deleted', {fileId});
@@ -155,7 +137,6 @@ const deleteFileById = async fileId => {
     throw err;
   }
 
-  // If no other files in the same folder, attempt to delete Cloudinary folder
   try {
     if (file.folderId) {
       const remaining = await File.countDocuments({folderId: file.folderId});
@@ -172,24 +153,20 @@ const deleteFileById = async fileId => {
   return file;
 };
 
-/** Get files by folder id */
 const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => {
   return getFilteredFiles({...filterParams, folderId}, options);
 };
 
-/** Filtered paginated query */
 const getFilteredFiles = async (filter, options) => {
   let query = {};
   if (filter.folderId === null) {
-    query.folderId = null; // root files only
+    query.folderId = null;
   } else if (filter.folderId) {
     query.folderId = filter.folderId;
   }
 
-  // Match by originalName using flexible regex when 'name' is provided
   if (filter.name) query.originalName = new RegExp(filter.name, 'i');
 
-  // Only date range is allowed besides name
   if (filter.dateFrom || filter.dateTo) {
     query.createdAt = {};
     if (filter.dateFrom) query.createdAt.$gte = new Date(filter.dateFrom);
