@@ -189,7 +189,7 @@ const getFilteredFiles = async (filter, options) => {
   // Match by originalName using flexible regex when 'name' is provided
   if (filter.name) query.originalName = new RegExp(filter.name, 'i');
 
-  if (filter.type) query.mimeType = new RegExp(filter.type, 'i');
+  // Only date range is allowed besides name
   if (filter.dateFrom || filter.dateTo) {
     query.createdAt = {};
     if (filter.dateFrom) query.createdAt.$gte = new Date(filter.dateFrom);

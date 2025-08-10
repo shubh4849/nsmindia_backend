@@ -50,12 +50,9 @@ const queryFolders = async (filter, options) => {
     query.name = new RegExp(filter.name, 'i');
   }
 
-  // If parentId is explicitly null or not provided, query for root folders (parentId: null)
-  // Otherwise, use the provided parentId
-  if (filter.parentId === null || filter.parentId === undefined) {
-    query.parentId = null;
-  } else if (filter.parentId) {
-    query.parentId = filter.parentId;
+  // Apply parentId filter only if explicitly provided in filter (including null)
+  if (Object.prototype.hasOwnProperty.call(filter, 'parentId')) {
+    query.parentId = filter.parentId; // may be null for root-only
   }
 
   if (filter.description) query.description = new RegExp(filter.description, 'i');

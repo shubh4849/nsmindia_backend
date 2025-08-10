@@ -174,27 +174,22 @@ const getDirectChildFilesCount = catchAsync(async (req, res) => {
 });
 
 const unifiedSearch = catchAsync(async (req, res) => {
-  const {name, description, dateFrom, dateTo, folderId, page = 1, limit = 10} = req.query;
+  // Only these three filters are supported
+  const {name, description, dateFrom, dateTo, page = 1, limit = 10, includeChildCounts} = req.query;
 
   // Folders filter
   const folderFilter = {};
-  if (typeof folderId !== 'undefined') {
-    folderFilter.parentId = folderId === 'null' ? null : folderId;
-  }
-  if (name) folderFilter.name = name; // service applies regex
-  if (description) folderFilter.description = description; // service applies regex
+  if (name) folderFilter.name = name; // regex in service
+  if (description) folderFilter.description = description; // regex in service
   if (dateFrom || dateTo) {
     folderFilter.createdAt = {};
     if (dateFrom) folderFilter.createdAt.$gte = new Date(dateFrom);
     if (dateTo) folderFilter.createdAt.$lte = new Date(dateTo);
   }
 
-  // Files filter
+  // Files filter (no description filter for files)
   const fileFilter = {};
-  if (typeof folderId !== 'undefined') {
-    fileFilter.folderId = folderId === 'null' ? null : folderId;
-  }
-  if (name) fileFilter.name = name; // used to match originalName in service
+  if (name) fileFilter.name = name; // matches originalName
   if (dateFrom) fileFilter.dateFrom = dateFrom;
   if (dateTo) fileFilter.dateTo = dateTo;
 
@@ -203,9 +198,27 @@ const unifiedSearch = catchAsync(async (req, res) => {
     fileService.getFilteredFiles(fileFilter, {page, limit}),
   ]);
 
+  let folders = foldersPage.results || [];
+
+  // Optionally enrich with child counts (for small page sizes this is acceptable)
+  if (includeChildCounts === 'true' || includeChildCounts === true) {
+    folders = await Promise.all(
+      folders.map(async f => {
+        const [childFolders, childFiles] = await Promise.all([
+          folderService.countChildFolders(f._id),
+          fileService.countChildFiles(f._id),
+        ]);
+        return {
+          ...(f.toObject ? f.toObject() : f),
+          counts: {childFolders, childFiles},
+        };
+      })
+    );
+  }
+
   res.json({
     status: true,
-    folders: foldersPage.results || [],
+    folders,
     files: filesPage.results || [],
     pagination: {
       page: parseInt(page),
