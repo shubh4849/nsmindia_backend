@@ -189,13 +189,17 @@ const unifiedSearch = catchAsync(async (req, res) => {
 
   // Files filter (no description filter for files)
   const fileFilter = {};
+  const hasFileFilters = Boolean(name) || Boolean(dateFrom) || Boolean(dateTo);
   if (name) fileFilter.name = name; // matches originalName
   if (dateFrom) fileFilter.dateFrom = dateFrom;
   if (dateTo) fileFilter.dateTo = dateTo;
 
+  // Query in parallel; files query only if relevant filters present
   const [foldersPage, filesPage] = await Promise.all([
     folderService.queryFolders(folderFilter, {page, limit}),
-    fileService.getFilteredFiles(fileFilter, {page, limit}),
+    hasFileFilters
+      ? fileService.getFilteredFiles(fileFilter, {page, limit})
+      : Promise.resolve({results: [], totalResults: 0, totalPages: 0}),
   ]);
 
   let folders = foldersPage.results || [];
