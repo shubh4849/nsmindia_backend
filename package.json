@@ -15,6 +15,7 @@
     "@aws-sdk/client-s3": "^3.350.0",
     "@aws-sdk/s3-request-presigner": "^3.350.0",
     "body-parser": "^1.20.2",
+    "busboy": "^1.6.0",
     "cloudinary": "^2.7.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",

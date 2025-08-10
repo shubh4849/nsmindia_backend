@@ -58,6 +58,9 @@ const queryFolders = async (filter, options) => {
     query.parentId = filter.parentId;
   }
 
+  if (filter.description) query.description = new RegExp(filter.description, 'i');
+  if (filter.createdAt) query.createdAt = filter.createdAt;
+
   const folders = await Folder.paginate(query, options);
   return folders;
 };

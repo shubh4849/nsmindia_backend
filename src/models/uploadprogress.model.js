@@ -8,7 +8,7 @@ const uploadProgressSchema = new mongoose.Schema({
   },
   fileName: {
     type: String,
-    required: true,
+    required: false,
     trim: true,
   },
   progress: {
@@ -34,6 +34,12 @@ const uploadProgressSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now,
+  },
+  // TTL cleanup field (auto-delete after ~1h by default)
+  expiresAt: {
+    type: Date,
+    default: () => new Date(Date.now() + 60 * 60 * 1000),
+    index: {expires: 60 * 60},
   },
 });
 

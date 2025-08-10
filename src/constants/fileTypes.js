@@ -10,11 +10,13 @@ const DOCUMENT_TYPES = [
   'text/plain', // .txt
   'text/csv', // .csv
 ];
+const VIDEO_TYPES = ['video/mp4'];
 
-const ALL_ALLOWED_FILE_TYPES = [...IMAGE_TYPES, ...DOCUMENT_TYPES];
+const ALL_ALLOWED_FILE_TYPES = [...IMAGE_TYPES, ...DOCUMENT_TYPES, ...VIDEO_TYPES];
 
 module.exports = {
   IMAGE_TYPES,
   DOCUMENT_TYPES,
+  VIDEO_TYPES,
   ALL_ALLOWED_FILE_TYPES,
 };

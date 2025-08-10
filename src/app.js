@@ -29,8 +29,19 @@ app.use(express.json());
 // parse urlencoded request body
 app.use(express.urlencoded({extended: true}));
 
-// gzip compression
-app.use(compression());
+// gzip compression (skip for SSE)
+app.use(
+  compression({
+    filter: (req, res) => {
+      // Skip by path
+      if (req.path && req.path.startsWith('/v1/sse/')) return false;
+      // Skip if client accepts event-stream
+      const accept = req.headers.accept || '';
+      if (accept.includes('text/event-stream')) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // enable cors
 app.use(cors());

@@ -11,14 +11,12 @@ const createNewUserObject = newUser => ({
 
 const loginUser = catchAsync(async (req, res) => {
   const user = req.user.__t === 'Student' ? await userService.getStudent(req.user._id) : req.user;
-  res.status(200).send({data: req.user});
+  res.status(200).send({status: true, data: req.user});
 });
 
 const registerUser = catchAsync(async (req, res) => {
   if (req.user) {
-    res.status(401).send({message: 'User already exist'});
-    // } else if (!req.newUser.email_verified) {
-    //   res.status(401).send({ message: "Email not verified" });
+    res.status(401).send({status: false, message: 'User already exist'});
   } else {
     const userObj = {
       ...createNewUserObject(req.newUser),
@@ -36,7 +34,7 @@ const registerUser = catchAsync(async (req, res) => {
       default:
         break;
     }
-    res.status(201).send({data: user});
+    res.status(201).send({status: true, data: user});
   }
 });
 

@@ -10,7 +10,7 @@ const createFile = {
     mimeType: Joi.string().required(),
     folderId: Joi.string()
       .custom(objectId)
-      .required(),
+      .optional(),
     description: Joi.string(),
   }),
 };
@@ -23,12 +23,17 @@ const getFile = {
 
 const updateFile = {
   params: Joi.object().keys({
-    fileId: Joi.required().custom(objectId),
+    fileId: Joi.string()
+      .custom(objectId)
+      .required(),
   }),
   body: Joi.object()
     .keys({
       name: Joi.string(),
       description: Joi.string(),
+      folderId: Joi.string()
+        .custom(objectId)
+        .optional(),
     })
     .min(1),
 };

@@ -3,6 +3,7 @@ const {fileTypes} = require('../constants');
 const ApiError = require('../utils/ApiError');
 const httpStatus = require('http-status');
 
+// Deprecated for file uploads: memoryStorage buffers the entire file. Use Busboy streaming in controller instead.
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -17,7 +18,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: 100 * 1024 * 1024, // 100MB
   },
 });
 

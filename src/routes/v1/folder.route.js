@@ -12,6 +12,8 @@ router
 
 // Specific routes must be declared before generic parameterized routes
 router.get('/tree', folderController.getFolderTree);
+router.get('/root/contents', folderController.getRootContents);
+router.get('/search', folderController.unifiedSearch);
 router.get('/count', folderController.getTotalFolders); // New route for total folders count
 
 router

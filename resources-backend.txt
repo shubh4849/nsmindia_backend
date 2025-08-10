@@ -16,7 +16,7 @@ const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 100 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     if (fileTypes.includes(file.mimetype)) {
@@ -241,7 +241,7 @@ module.exports = {
 ```
 
 ---
-### Controllers
+### Controllers (status wrapping + SSE init)
 ---
 
 #### `src/controllers/file.controller.js`
@@ -257,27 +257,20 @@ const {getPaginateConfig} = require('../utils/queryPHandler');
 
 const uploadFile = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
-  if (!req.file) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'No file uploaded');
-  }
+  if (!req.file) throw new ApiError(httpStatus.BAD_REQUEST, 'No file uploaded');
   if (!fileTypes.includes(req.file.mimetype)) {
-    throw new ApiError(
-      httpStatus.UNSUPPORTED_MEDIA_TYPE,
-      `File type ${req.file.mimetype} is not supported. Allowed types: ${ALL_ALLOWED_FILE_TYPES.join(', ')}`
-    );
+    throw new ApiError(httpStatus.UNSUPPORTED_MEDIA_TYPE, `File type ${req.file.mimetype} is not supported. Allowed types: ${ALL_ALLOWED_FILE_TYPES.join(', ')}`);
   }
-  const file = await fileService.createFile({
-    buffer: req.file.buffer,
-    originalName: req.file.originalname,
-    mimeType: req.file.mimetype,
-    fileSize: req.file.size,
-    folderId: req.body.folderId,
-  });
-
-  await progressService.updateUploadProgress(uploadId, req.file.size, req.file.size);
-
-  // Return full file document along with uploadId
-  res.status(httpStatus.CREATED).send({uploadId, file});
+  // Initialize progress for SSE
+  await progressService.updateUploadProgress(uploadId, 0, req.file.size, { fileName: req.file.originalname, status: 'uploading' });
+  try {
+    const file = await fileService.createFile({ buffer: req.file.buffer, originalName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size, folderId: req.body.folderId });
+    await progressService.updateUploadProgress(uploadId, req.file.size, req.file.size, { fileName: req.file.originalname, status: 'completed' });
+    res.status(httpStatus.CREATED).send({ status: true, uploadId, file });
+  } catch (err) {
+    try { await progressService.updateUploadProgress(uploadId, 0, req.file.size, { fileName: req.file.originalname, status: 'failed' }); } catch {}
+    throw err;
+  }
 });
 
 const getFiles = catchAsync(async (req, res) => {
@@ -417,7 +410,7 @@ const deleteFolder = catchAsync(async (req, res) => {
 const getFolderTree = catchAsync(async (req, res) => {
   const folders = await folderService.getAllFolders();
   const tree = folderService.buildTree(folders);
-  res.send(tree);
+  res.send({ status: true, results: tree });
 });
 
 // Returns both folders and files under the given folderId
@@ -436,6 +429,7 @@ const getFolderContents = catchAsync(async (req, res) => {
   const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
   res.json({
+    status: true,
     folders,
     files,
     pagination: {
@@ -451,7 +445,7 @@ const getFolderContents = catchAsync(async (req, res) => {
 
 const getFolderBreadcrumb = catchAsync(async (req, res) => {
   const breadcrumb = await folderService.getFolderBreadcrumb(req.params.folderId);
-  res.send(breadcrumb);
+  res.send({ status: true, results: breadcrumb });
 });
 
 const getFilteredFolderContents = catchAsync(async (req, res) => {
@@ -469,6 +463,7 @@ const getFilteredFolderContents = catchAsync(async (req, res) => {
   const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
   res.json({
+    status: true,
     folders,
     files,
     pagination: {
@@ -565,42 +560,28 @@ const catchAsync = require('../utils/catchAsync');
 const {progressService, sseService} = require('../services');
 
 const getUploadProgress = catchAsync(async (req, res) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-  });
-
-  const {uploadId} = req.params;
-  const sendProgress = data => {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
+  res.writeHead(200, {'Content-Type': 'text/event-stream','Cache-Control': 'no-cache', Connection: 'keep-alive','Access-Control-Allow-Origin': '*'});
+  const { uploadId } = req.params;
+  const send = (event, data) => { if (event) res.write(`event: ${event}\n`); res.write(`data: ${JSON.stringify(data)}\n\n`); };
+  const startedAt = Date.now();
+  const maxWaitMs = 60 * 1000;
   const interval = setInterval(async () => {
-    const progress = await progressService.getUploadProgressById(uploadId);
-    if (progress) {
-      sendProgress({
-        progress: progress.progress,
-        status: progress.status,
-        fileName: progress.fileName,
-      });
-
-      if (progress.status === 'completed' || progress.status === 'failed') {
-        clearInterval(interval);
-        await progressService.cleanupUploadProgress(uploadId);
-        res.end();
+    try {
+      const progress = await progressService.getUploadProgressById(uploadId);
+      if (progress) {
+        send(null, { progress: progress.progress, status: progress.status, fileName: progress.fileName });
+        if (progress.status === 'completed' || progress.status === 'failed') {
+          clearInterval(interval);
+          await progressService.cleanupUploadProgress(uploadId);
+          res.end();
+        }
+      } else if (Date.now() - startedAt > maxWaitMs) {
+        send('timeout', { status: 'failed', progress: 0 });
+        clearInterval(interval); res.end();
       }
-    } else {
-      clearInterval(interval);
-      res.end();
-    }
+    } catch (e) { clearInterval(interval); res.end(); }
   }, 1000);
-
-  req.on('close', () => {
-    clearInterval(interval);
-    res.end();
-  });
+  req.on('close', () => { clearInterval(interval); res.end(); });
 });
 
 const getFolderUpdates = catchAsync(async (req, res) => {
@@ -632,8 +613,334 @@ module.exports = {
 ```
 
 ---
+### Controllers (auth, user)
+---
+
+#### `src/controllers/auth.controller.js`
+```javascript
+const httpStatus = require('http-status');
+const catchAsync = require('../utils/catchAsync');
+const {userService} = require('../services');
+const {tokenService} = require('../services/token.service');
+const {userValidation} = require('../validations');
+
+const register = catchAsync(async (req, res) => {
+  const user = await userService.createUser(req.body);
+  const tokens = await tokenService.generateAuthTokens(user);
+  res.status(httpStatus.CREATED).send({ status: true, user, tokens });
+});
+
+const login = catchAsync(async (req, res) => {
+  const { email, password } = req.body;
+  const user = await userService.loginUserWithEmailAndPassword(email, password);
+  const tokens = await tokenService.generateAuthTokens(user);
+  res.send({ status: true, user, tokens });
+});
+
+const logout = catchAsync(async (req, res) => {
+  await tokenService.logout(req.body.refreshToken);
+  res.status(httpStatus.NO_CONTENT).send({ status: true });
+});
+
+const refreshTokens = catchAsync(async (req, res) => {
+  const tokens = await tokenService.refreshAuth(req.body.refreshToken);
+  res.send({ status: true, ...tokens });
+});
+
+const forgotPassword = catchAsync(async (req, res) => {
+  const resetPasswordToken = await tokenService.generateResetPasswordToken(req.body.email);
+  res.send({ status: true, resetPasswordToken });
+});
+
+const resetPassword = catchAsync(async (req, res) => {
+  await userService.resetPassword(req.query.token, req.body.password);
+  res.send({ status: true });
+});
+
+const verifyEmail = catchAsync(async (req, res) => {
+  await userService.verifyEmail(req.query.token);
+  res.send({ status: true });
+});
+
+module.exports = {
+  register,
+  login,
+  logout,
+  refreshTokens,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
+};
+```
+
+#### `src/controllers/user.controller.js`
+```javascript
+const httpStatus = require('http-status');
+const catchAsync = require('../utils/catchAsync');
+const {userService} = require('../services');
+const {tokenService} = require('../services/token.service');
+const {userValidation} = require('../validations');
+
+const getUsers = catchAsync(async (req, res) => {
+  const users = await userService.queryUsers(req.query);
+  res.send({ status: true, results: users });
+});
+
+const getUser = catchAsync(async (req, res) => {
+  const user = await userService.getUserById(req.params.userId);
+  if (!user) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  }
+  res.send({ status: true, user });
+});
+
+const updateUser = catchAsync(async (req, res) => {
+  const user = await userService.updateUserById(req.params.userId, req.body);
+  res.send({ status: true, user });
+});
+
+const deleteUser = catchAsync(async (req, res) => {
+  await userService.deleteUserById(req.params.userId);
+  res.status(httpStatus.NO_CONTENT).send({ status: true });
+});
+
+module.exports = {
+  getUsers,
+  getUser,
+  updateUser,
+  deleteUser,
+};
+```
+
+---
+### Controllers (error)
+---
+
+#### `src/middlewares/error.js`
+```javascript
+const httpStatus = require('http-status');
+const ApiError = require('../utils/ApiError');
+const catchAsync = require('../utils/catchAsync');
+const {logger} = require('../utils/logger');
+
+const errorConverter = (err, req, res, next) => {
+  let error = err;
+  if (!(error instanceof ApiError)) {
+    const statusCode = error.statusCode ? httpStatus.BAD_REQUEST : httpStatus.INTERNAL_SERVER_ERROR;
+    const message = error.message || httpStatus[statusCode];
+    error = new ApiError(statusCode, message, false, err.stack);
+  }
+  next(error);
+};
+
+const errorHandler = (err, req, res, next) => {
+  let {statusCode, message} = err;
+  if (statusCode === undefined) {
+    statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+  }
+  res.locals.errorMessage = err.message;
+
+  const response = {
+    code: statusCode,
+    message,
+  };
+
+  if (process.env.NODE_ENV === 'development') {
+    logger.error(err);
+    response.stack = err.stack;
+  }
+
+  res.status(statusCode).send(response);
+};
+
+module.exports = {
+  errorConverter,
+  errorHandler,
+};
+```
+
+---
+### Models
+---
+
+#### `src/models/file.model.js`
+```javascript
+const mongoose = require('mongoose');
+const fileSchema = new mongoose.Schema({
+  name: String,
+  originalName: String,
+  filePath: String,
+  publicId: String,
+  key: String, // mirrors publicId for S3-like naming
+  resourceType: String, // image | video | raw
+  format: String,
+  deliveryType: { type: String, default: 'upload' },
+  fileSize: Number,
+  mimeType: String,
+  folderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder' },
+  description: String,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+fileSchema.index({ publicId: 1 });
+fileSchema.index({ key: 1 });
+const File = mongoose.models.File || mongoose.model('File', fileSchema, 'files');
+module.exports = File;
+```
+
+#### `src/models/folder.model.js`
+```javascript
+const mongoose = require('mongoose');
+const folderSchema = new mongoose.Schema({
+  name: String,
+  parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: null },
+  path: String,
+  description: String,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+folderSchema.index({ name: 1, parentId: 1 }, { unique: true });
+folderSchema.index({ path: 1 }, { unique: true });
+const Folder = mongoose.models.Folder || mongoose.model('Folder', folderSchema, 'folders');
+module.exports = Folder;
+```
+
+#### `src/models/uploadProgress.model.js`
+```javascript
+const mongoose = require('mongoose');
+const uploadProgressSchema = new mongoose.Schema({
+  uploadId: { type: String, required: true, unique: true },
+  fileName: String,
+  fileSize: Number,
+  uploadedBytes: { type: Number, default: 0 },
+  progress: { type: Number, default: 0 },
+  status: { type: String, enum: ['uploading', 'completed', 'failed'], default: 'uploading' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+uploadProgressSchema.index({ uploadId: 1 });
+const UploadProgress = mongoose.models.UploadProgress || mongoose.model('UploadProgress', uploadProgressSchema, 'uploadProgress');
+module.exports = UploadProgress;
+```
+
+---
+### Microservices (Cloudinary)
+---
+
+#### `src/microservices/fileUpload.service.js`
+```javascript
+const cloudinary = require('cloudinary').v2;
+const config = require('../config/config');
+const {logger} = require('../utils/logger');
+
+cloudinary.config({ cloud_name: config.cloudinary.cloudName, api_key: config.cloudinary.apiKey, api_secret: config.cloudinary.apiSecret, secure: true });
+function sanitizeBaseName(name) {
+  const lower = name.toLowerCase();
+  const ext = lower.split('.').pop();
+  const sanitized = lower.replace(/[^a-z0-9-.]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return `${sanitized}-${Date.now()}.${ext}`;
+}
+const uploadFileToCloudinary = async ({ fileBuffer, folder, publicId, resourceType = 'auto' }) => new Promise((resolve, reject) => {
+  cloudinary.uploader.upload_stream({ resource_type: resourceType, folder, public_id: publicId, use_filename: false, unique_filename: false, overwrite: true }, (error, result) => error ? reject(error) : resolve(result)).end(fileBuffer);
+});
+const deleteFileFromCloudinary = async (publicId, options={}) => cloudinary.uploader.destroy(publicId, options);
+const deleteFolderIfEmpty = async (folder) => { try { return await cloudinary.api.delete_folder(folder); } catch (e) { return null; } };
+module.exports = { sanitizeBaseName, uploadFileToCloudinary, deleteFileFromCloudinary, deleteFolderIfEmpty };
+```
+
+---
 ### Services
 ---
+
+#### `src/services/file.service.js`
+```javascript
+const httpStatus = require('http-status');
+const {File} = require('../models');
+const ApiError = require('../utils/ApiError');
+const {fileUploadService} = require('../microservices');
+
+const createFile = async ({ buffer, originalName, mimeType, fileSize, folderId }) => {
+  const folderPath = `files/${folderId || 'root'}`;
+  const base = fileUploadService.sanitizeBaseName(originalName);
+  const uniqueBase = `${uuidv4()}-${base}`;
+  const uploadResult = await fileUploadService.uploadFileToCloudinary({ fileBuffer: buffer, folder: folderPath, publicId: uniqueBase, resourceType: 'auto' });
+  return File.create({ name: base || originalName, originalName, filePath: uploadResult.secure_url, publicId: uploadResult.public_id, key: uploadResult.public_id, resourceType: uploadResult.resource_type, format: uploadResult.format, deliveryType: 'upload', fileSize, mimeType, folderId });
+};
+
+// Paginated query
+const queryFiles = async (filters, options) => {
+  const mongoFilters = {};
+  if (filters.name) mongoFilters.name = new RegExp(filters.name, 'i');
+  if (filters.description) mongoFilters.description = new RegExp(filters.description, 'i');
+  if (filters.folderId) mongoFilters.folderId = filters.folderId;
+  if (filters.mimeType) mongoFilters.mimeType = new RegExp(filters.mimeType, 'i');
+  if (filters.dateFrom || filters.dateTo) {
+    mongoFilters.createdAt = {};
+    if (filters.dateFrom) mongoFilters.createdAt.$gte = new Date(filters.dateFrom);
+    if (filters.dateTo) mongoFilters.createdAt.$lte = new Date(filters.dateTo);
+  }
+  return File.paginate(mongoFilters, options || {});
+};
+
+const getFileById = async id => File.findById(id);
+
+const updateFileById = async (fileId, updateBody) => {
+  const file = await getFileById(fileId);
+  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
+  Object.assign(file, updateBody);
+  await file.save();
+  return file;
+};
+
+const deleteFileById = async (fileId) => {
+  const file = await getFileById(fileId);
+  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
+  let publicId = file.key || file.publicId; let resourceType = file.resourceType;
+  if (!publicId || !resourceType) { const derived = deriveCloudinaryIdentifiers(file.filePath || ''); publicId = publicId || derived.publicId; resourceType = resourceType || derived.resourceType; }
+  try { if (publicId) await fileUploadService.deleteFileFromCloudinary(publicId, { resource_type: resourceType || 'raw', type: 'upload', invalidate: true }); } catch {}
+  await file.deleteOne();
+  try { if (file.folderId && (await File.countDocuments({ folderId: file.folderId })) === 0) { const folderPath = `files/${file.folderId}`; await fileUploadService.deleteFolderIfEmpty(folderPath); } } catch {}
+  return file;
+};
+
+const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => {
+  return getFilteredFiles({...filterParams, folderId}, options);
+};
+
+// Filtered paginated query (supports q/name/description/type/date range)
+const getFilteredFiles = async (filter, options) => {
+  let query = {};
+  if (filter.folderId) query.folderId = filter.folderId;
+  if (filter.q) {
+    query.$text = {$search: filter.q};
+  } else {
+    if (filter.name) query.name = new RegExp(filter.name, 'i');
+    if (filter.description) query.description = new RegExp(filter.description, 'i');
+  }
+  if (filter.type) query.mimeType = new RegExp(filter.type, 'i');
+  if (filter.dateFrom || filter.dateTo) {
+    query.createdAt = {};
+    if (filter.dateFrom) query.createdAt.$gte = new Date(filter.dateFrom);
+    if (filter.dateTo) query.createdAt.$lte = new Date(filter.dateTo);
+  }
+  return File.paginate(query, options || {});
+};
+
+const getTotalFilesCount = async () => File.countDocuments();
+const countChildFiles = async folderId => File.countDocuments({folderId});
+
+module.exports = {
+  createFile,
+  queryFiles,
+  getFileById,
+  updateFileById,
+  deleteFileById,
+  getFilesByFolderId,
+  getFilteredFiles,
+  getTotalFilesCount,
+  countChildFiles,
+};
+```
 
 #### `src/services/folder.service.js`
 ```javascript
@@ -761,111 +1068,17 @@ module.exports = {
 };
 ```
 
-#### `src/services/file.service.js`
-```javascript
-const httpStatus = require('http-status');
-const {File} = require('../models');
-const ApiError = require('../utils/ApiError');
-const {fileUploadService} = require('../microservices');
-
-const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) => {
-  const uploadResult = await fileUploadService.uploadFileToCloudinary(buffer, `files/${folderId || 'root'}`, originalName);
-  const fileBody = {
-    name: uploadResult.original_filename || originalName,
-    originalName,
-    filePath: uploadResult.secure_url,
-    fileSize,
-    mimeType,
-    folderId,
-  };
-  return File.create(fileBody);
-};
-
-// Paginated query
-const queryFiles = async (filters, options) => {
-  const mongoFilters = {};
-  if (filters.name) mongoFilters.name = new RegExp(filters.name, 'i');
-  if (filters.description) mongoFilters.description = new RegExp(filters.description, 'i');
-  if (filters.folderId) mongoFilters.folderId = filters.folderId;
-  if (filters.mimeType) mongoFilters.mimeType = new RegExp(filters.mimeType, 'i');
-  if (filters.dateFrom || filters.dateTo) {
-    mongoFilters.createdAt = {};
-    if (filters.dateFrom) mongoFilters.createdAt.$gte = new Date(filters.dateFrom);
-    if (filters.dateTo) mongoFilters.createdAt.$lte = new Date(filters.dateTo);
-  }
-  return File.paginate(mongoFilters, options || {});
-};
-
-const getFileById = async id => File.findById(id);
-
-const updateFileById = async (fileId, updateBody) => {
-  const file = await getFileById(fileId);
-  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
-  Object.assign(file, updateBody);
-  await file.save();
-  return file;
-};
-
-const deleteFileById = async fileId => {
-  const file = await getFileById(fileId);
-  if (!file) throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
-  const cloudinaryPublicId = file.filePath.split('/').pop().split('.')[0];
-  await fileUploadService.deleteFileFromCloudinary(cloudinaryPublicId);
-  await file.remove();
-  return file;
-};
-
-const getFilesByFolderId = async (folderId, filterParams = {}, options = {}) => {
-  return getFilteredFiles({...filterParams, folderId}, options);
-};
-
-// Filtered paginated query (supports q/name/description/type/date range)
-const getFilteredFiles = async (filter, options) => {
-  let query = {};
-  if (filter.folderId) query.folderId = filter.folderId;
-  if (filter.q) {
-    query.$text = {$search: filter.q};
-  } else {
-    if (filter.name) query.name = new RegExp(filter.name, 'i');
-    if (filter.description) query.description = new RegExp(filter.description, 'i');
-  }
-  if (filter.type) query.mimeType = new RegExp(filter.type, 'i');
-  if (filter.dateFrom || filter.dateTo) {
-    query.createdAt = {};
-    if (filter.dateFrom) query.createdAt.$gte = new Date(filter.dateFrom);
-    if (filter.dateTo) query.createdAt.$lte = new Date(filter.dateTo);
-  }
-  return File.paginate(query, options || {});
-};
-
-const getTotalFilesCount = async () => File.countDocuments();
-const countChildFiles = async folderId => File.countDocuments({folderId});
-
-module.exports = {
-  createFile,
-  queryFiles,
-  getFileById,
-  updateFileById,
-  deleteFileById,
-  getFilesByFolderId,
-  getFilteredFiles,
-  getTotalFilesCount,
-  countChildFiles,
-};
-```
-
 #### `src/services/progress.service.js`
 ```javascript
 const {UploadProgress} = require('../models');
 
-const updateUploadProgress = async (uploadId, uploadedBytes, totalBytes) => {
-  const progress = (uploadedBytes / totalBytes) * 100;
-  const status = progress === 100 ? 'completed' : 'uploading';
-  return UploadProgress.findByIdAndUpdate(
-    uploadId,
-    {uploadedBytes, progress, status, updatedAt: Date.now()},
-    {new: true, upsert: true}
-  );
+const updateUploadProgress = async (uploadId, uploadedBytes, totalBytes, meta = {}) => {
+  const progress = totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0;
+  const status = meta.status || (progress >= 100 ? 'completed' : 'uploading');
+  const update = { uploadedBytes, progress, status, updatedAt: Date.now() };
+  if (typeof totalBytes === 'number') update.fileSize = totalBytes;
+  if (meta.fileName) update.fileName = meta.fileName;
+  return UploadProgress.findByIdAndUpdate(uploadId, update, { new: true, upsert: true });
 };
 
 const getUploadProgressById = async uploadId => UploadProgress.findById(uploadId);
@@ -896,3 +1109,18 @@ module.exports = {
   getFolderChangeStream,
 };
 ```
+
+---
+### Response shape (status flag)
+---
+- Success responses include `{ status: true, ... }` across controllers (file, folder, auth, user).
+- Errors are shaped as `{ status: false, code, message, stack? }` via error middleware.
+
+---
+### Notes
+---
+- File size limit increased to 100MB.
+- mp4 uploads accepted (`video/mp4`).
+- Cloudinary publicId/key follow `files/<folderId>/<uuid>-<sanitized-name>`.
+- Folder auto-cleanup: after last file in a folder is deleted, attempt Cloudinary `delete_folder(files/<folderId>)`.
+- SSE upload-progress initialized at start; endpoint waits up to 60s for record and streams updates; closes on completed/failed.
