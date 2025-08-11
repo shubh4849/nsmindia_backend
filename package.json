@@ -1,7 +1,7 @@
 {
-  "name": "bneighbourly",
+  "name": "nsm",
   "version": "1.0.0",
-  "description": "bneighbourly-backend",
+  "description": "nsm-backend",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
@@ -10,7 +10,8 @@
     "docker:down": "docker compose down",
     "test": "echo \"Error: no test specified\" && exit 1",
     "format": "prettier --write \"src/**/*.js\"",
-    "backfill:publicViewUrl": "node scripts/backfill-publicViewUrl.js"
+    "backfill:publicViewUrl": "node scripts/backfill-publicViewUrl.js",
+    "migrate:r2": "node scripts/migrate-to-r2.js"
   },
   "author": "Tushar Inani",
   "license": "ISC",
