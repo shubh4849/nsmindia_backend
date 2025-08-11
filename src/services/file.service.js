@@ -4,30 +4,46 @@ const ApiError = require('../utils/ApiError');
 const {fileUploadService} = require('../microservices');
 const {v4: uuidv4} = require('uuid');
 const config = require('../config/config');
-const {mapResourceType, buildPublicViewUrl, resolveExtension} = require('../utils/cloudinary');
+const {mapResourceType, resolveExtension, buildPublicUrlFromBase} = require('../utils/cloudinary');
 
-function deriveCloudinaryIdentifiers(secureUrl) {
+function deriveStorageIdentifiers(urlString) {
   try {
-    const url = new URL(secureUrl);
-    const parts = url.pathname.split('/');
-    const uploadIndex = parts.findIndex(p => p === 'upload');
-    if (uploadIndex === -1) return {publicId: null, resourceType: 'raw'};
-    const resourceType = parts[uploadIndex - 1] || 'raw';
-    const afterUpload = parts.slice(uploadIndex + 1);
-    const afterVersion = afterUpload[0] && /^v\d+/.test(afterUpload[0]) ? afterUpload.slice(1) : afterUpload;
-    if (afterVersion.length === 0) return {publicId: null, resourceType};
+    const url = new URL(urlString);
+    const path = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
 
-    const decodedSegments = afterVersion.map(seg => {
-      try {
-        return decodeURIComponent(seg);
-      } catch {
-        return seg;
+    // R2 path: <base>/<key>
+    const r2Base = config.r2.publicBaseUrl.replace(/\/$/, '');
+    const r2BaseUrl = new URL(r2Base);
+    if (url.host === r2BaseUrl.host) {
+      // If base has path prefix, strip it
+      const basePath = r2BaseUrl.pathname.replace(/^\//, '');
+      const key = basePath && path.startsWith(`${basePath}/`) ? path.slice(basePath.length + 1) : path;
+      return {publicId: key, resourceType: 'raw'};
+    }
+
+    // Legacy Cloudinary path: .../<resourceType>/upload/.../<publicId>[.ext]
+    const parts = path.split('/');
+    const uploadIndex = parts.findIndex(p => p === 'upload');
+    if (uploadIndex !== -1) {
+      const resourceType = parts[uploadIndex - 1] || 'raw';
+      const afterUpload = parts.slice(uploadIndex + 1);
+      const afterVersion = afterUpload[0] && /^v\d+/.test(afterUpload[0]) ? afterUpload.slice(1) : afterUpload;
+      if (afterVersion.length > 0) {
+        const decodedSegments = afterVersion.map(seg => {
+          try {
+            return decodeURIComponent(seg);
+          } catch {
+            return seg;
+          }
+        });
+        const last = decodedSegments[decodedSegments.length - 1];
+        const withoutExt = last.includes('.') ? last.substring(0, last.lastIndexOf('.')) : last;
+        const publicPath = [...decodedSegments.slice(0, -1), withoutExt].join('/');
+        return {publicId: publicPath, resourceType};
       }
-    });
-    const last = decodedSegments[decodedSegments.length - 1];
-    const withoutExt = last.includes('.') ? last.substring(0, last.lastIndexOf('.')) : last;
-    const publicPath = [...decodedSegments.slice(0, -1), withoutExt].join('/');
-    return {publicId: publicPath, resourceType};
+    }
+
+    return {publicId: null, resourceType: 'raw'};
   } catch (e) {
     return {publicId: null, resourceType: 'raw'};
   }
@@ -45,13 +61,13 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
     folder: folderPath,
     publicId: uniqueBase,
     resourceType,
+    mimeType,
   });
 
   const extension = resolveExtension({format: uploadResult.format, mimeType, originalName});
-  const publicViewUrl = buildPublicViewUrl({
-    cloudName: config.cloudinary.cloudName,
-    resourceType: uploadResult.resource_type,
-    publicId: uploadResult.public_id,
+  const publicViewUrl = buildPublicUrlFromBase({
+    baseUrl: config.r2.publicBaseUrl,
+    key: uploadResult.public_id,
     extension,
   });
 
@@ -76,10 +92,9 @@ const createFileRecordFromUploadResult = async ({uploadResult, originalName, mim
   const base = fileUploadService.sanitizeBaseName(originalName || uploadResult.original_filename || 'file');
 
   const extension = resolveExtension({format: uploadResult.format, mimeType, originalName});
-  const publicViewUrl = buildPublicViewUrl({
-    cloudName: config.cloudinary.cloudName,
-    resourceType: uploadResult.resource_type || mapResourceType(mimeType),
-    publicId: uploadResult.public_id,
+  const publicViewUrl = buildPublicUrlFromBase({
+    baseUrl: config.r2.publicBaseUrl,
+    key: uploadResult.public_id,
     extension,
   });
 
@@ -131,7 +146,7 @@ const deleteFileById = async fileId => {
   let publicId = file.key || file.publicId;
   let resourceType = file.resourceType;
   if (!publicId || !resourceType) {
-    const derived = deriveCloudinaryIdentifiers(file.filePath || '');
+    const derived = deriveStorageIdentifiers(file.filePath || '');
     publicId = publicId || derived.publicId;
     resourceType = resourceType || derived.resourceType;
   }
@@ -144,12 +159,12 @@ const deleteFileById = async fileId => {
         type: 'upload',
         invalidate: true,
       });
-      console.log('[DeleteFile] Cloudinary destroy response', destroyRes);
+      console.log('[DeleteFile] Storage delete response', destroyRes);
     } else {
-      console.warn('[DeleteFile] No publicId available, skipping Cloudinary destroy');
+      console.warn('[DeleteFile] No publicId available, skipping storage delete');
     }
   } catch (err) {
-    console.error('[DeleteFile] Cloudinary destroy error', err);
+    console.error('[DeleteFile] Storage delete error', err);
   }
 
   try {
@@ -166,7 +181,7 @@ const deleteFileById = async fileId => {
       if (remaining === 0) {
         const folderPath = `files/${file.folderId}`;
         const delFolderRes = await fileUploadService.deleteFolderIfEmpty(folderPath);
-        console.log('[DeleteFile] Cloudinary delete_folder attempt', {folderPath, delFolderRes});
+        console.log('[DeleteFile] Storage delete_folder attempt', {folderPath, delFolderRes});
       }
     }
   } catch (err) {

@@ -1,11 +1,15 @@
-const cloudinary = require('cloudinary').v2;
+const {S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand} = require('@aws-sdk/client-s3');
+const {Readable} = require('stream');
 const config = require('../config/config');
 
-cloudinary.config({
-  cloud_name: config.cloudinary.cloudName,
-  api_key: config.cloudinary.apiKey,
-  api_secret: config.cloudinary.apiSecret,
-  secure: true,
+const s3 = new S3Client({
+  region: config.r2.region,
+  endpoint: config.r2.endpoint,
+  credentials: {
+    accessKeyId: config.r2.accessKeyId,
+    secretAccessKey: config.r2.secretAccessKey,
+  },
+  forcePathStyle: config.r2.forcePathStyle,
 });
 
 function sanitizeBaseName(name) {
@@ -17,77 +21,82 @@ function sanitizeBaseName(name) {
     .replace(/^-|-$/g, '');
 }
 
-/**
- * Upload a file to Cloudinary with a stable public_id from Buffer
- * @param {Object} args
- * @param {Buffer} args.fileBuffer - The file buffer to upload
- * @param {string} args.folder - The folder in Cloudinary (e.g., files/<folderId>)
- * @param {string} args.publicId - Public ID base (without extension); will be nested under folder
- * @param {('auto'|'image'|'video'|'raw')} [args.resourceType='auto'] - Cloudinary resource type
- * @returns {Promise<Object>}
- */
-const uploadFileToCloudinary = async ({fileBuffer, folder, publicId, resourceType = 'auto'}) => {
-  return new Promise((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream(
-        {
-          resource_type: resourceType,
-          folder,
-          public_id: publicId,
-          use_filename: false,
-          unique_filename: false,
-          overwrite: true,
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result);
-        }
-      )
-      .end(fileBuffer);
+async function uploadFileToR2({buffer, key, contentType, cacheControl}) {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: config.r2.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+      CacheControl: cacheControl,
+    })
+  );
+}
+
+async function uploadStreamToR2({stream, key, contentType, cacheControl}) {
+  const chunks = [];
+  await new Promise((resolve, reject) => {
+    stream.on('data', chunk => chunks.push(chunk));
+    stream.on('end', resolve);
+    stream.on('error', reject);
   });
-};
+  const buffer = Buffer.concat(chunks);
+  await uploadFileToR2({buffer, key, contentType, cacheControl});
+}
 
-const uploadStreamToCloudinary = async ({stream, folder, publicId, resourceType = 'auto'}) => {
-  return new Promise((resolve, reject) => {
-    const cldStream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: resourceType,
-        folder,
-        public_id: publicId,
-        use_filename: false,
-        unique_filename: false,
-        overwrite: true,
-      },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-    stream.pipe(cldStream);
-  });
-};
+async function deleteFromR2(key) {
+  await s3.send(
+    new DeleteObjectCommand({
+      Bucket: config.r2.bucket,
+      Key: key,
+    })
+  );
+}
 
-const deleteFileFromCloudinary = async (publicId, options = {}) => {
-  return cloudinary.uploader.destroy(publicId, options);
-};
-
-const deleteFolderIfEmpty = async folder => {
-  try {
-    const res = await cloudinary.api.delete_folder(folder);
-    return res;
-  } catch (e) {
-    console.warn('[Cloudinary] delete_folder failed (likely not empty)', {
-      folder,
-      error: e?.error || e?.message || e,
-    });
-    return null;
-  }
-};
+function buildPublicUrlFromKey(key) {
+  return `${config.r2.publicBaseUrl.replace(/\/$/, '')}/${key}`;
+}
 
 module.exports = {
   sanitizeBaseName,
-  uploadFileToCloudinary,
-  uploadStreamToCloudinary,
-  deleteFileFromCloudinary,
-  deleteFolderIfEmpty,
+  uploadFileToCloudinary: async ({fileBuffer, folder, publicId, resourceType = 'raw', mimeType}) => {
+    const key = `${folder}/${publicId}`;
+    await uploadFileToR2({
+      buffer: fileBuffer,
+      key,
+      contentType: mimeType || 'application/octet-stream',
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+    return {
+      public_id: key,
+      secure_url: buildPublicUrlFromKey(key),
+      resource_type: resourceType,
+      format: undefined,
+      type: 'upload',
+    };
+  },
+  uploadStreamToCloudinary: async ({stream, folder, publicId, resourceType = 'raw', mimeType}) => {
+    const key = `${folder}/${publicId}`;
+    await uploadStreamToR2({
+      stream,
+      key,
+      contentType: mimeType || 'application/octet-stream',
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+    return {
+      public_id: key,
+      secure_url: buildPublicUrlFromKey(key),
+      resource_type: resourceType,
+      format: undefined,
+      type: 'upload',
+    };
+  },
+  deleteFileFromCloudinary: async publicId => {
+    await deleteFromR2(publicId);
+    return {result: 'ok'};
+  },
+  deleteFolderIfEmpty: async folder => {
+    // No-op: S3 doesn't have folders; optional to implement listing and conditional deletes
+    return null;
+  },
 };

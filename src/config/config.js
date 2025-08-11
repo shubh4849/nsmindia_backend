@@ -11,9 +11,23 @@ const envVarsSchema = Joi.object()
       .required(),
     PORT: Joi.number().default(8082),
     MONGODB_URL: Joi.string().required(),
-    CLOUDINARY_CLOUD_NAME: Joi.string().required(),
-    CLOUDINARY_API_KEY: Joi.string().required(),
-    CLOUDINARY_API_SECRET: Joi.string().required(),
+    // Cloudflare R2
+    R2_ACCOUNT_ID: Joi.string().required(),
+    R2_ACCESS_KEY_ID: Joi.string().required(),
+    R2_SECRET_ACCESS_KEY: Joi.string().required(),
+    R2_BUCKET: Joi.string().required(),
+    R2_PUBLIC_BASE_URL: Joi.string()
+      .uri()
+      .required(),
+    R2_FORCE_PATH_STYLE: Joi.string()
+      .valid('true', 'false')
+      .default('true'),
+    R2_REGION: Joi.string().default('auto'),
+    // KAFKA_BROKERS: Joi.string().default('localhost:9093'),
+    // KAFKA_CLIENT_ID: Joi.string().default('nsm-backend'),
+    // KAFKA_SSL: Joi.string()
+    //   .valid('true', 'false')
+    //   .default('false'),
   })
   .unknown();
 
@@ -26,10 +40,15 @@ if (error) {
 module.exports = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
-  cloudinary: {
-    cloudName: envVars.CLOUDINARY_CLOUD_NAME,
-    apiKey: envVars.CLOUDINARY_API_KEY,
-    apiSecret: envVars.CLOUDINARY_API_SECRET,
+  r2: {
+    accountId: envVars.R2_ACCOUNT_ID,
+    accessKeyId: envVars.R2_ACCESS_KEY_ID,
+    secretAccessKey: envVars.R2_SECRET_ACCESS_KEY,
+    bucket: envVars.R2_BUCKET,
+    publicBaseUrl: envVars.R2_PUBLIC_BASE_URL.replace(/\/$/, ''),
+    forcePathStyle: envVars.R2_FORCE_PATH_STYLE === 'true',
+    region: envVars.R2_REGION,
+    endpoint: `https://${envVars.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   },
   mongoose: {
     url: envVars.MONGODB_URL + (envVars.NODE_ENV === 'test' ? '-test' : ''),
@@ -38,4 +57,9 @@ module.exports = {
       useUnifiedTopology: true,
     },
   },
+  // kafka: {
+  //   brokers: envVars.KAFKA_BROKERS.split(',').map(s => s.trim()),
+  //   clientId: envVars.KAFKA_CLIENT_ID,
+  //   ssl: envVars.KAFKA_SSL === 'true',
+  // },
 };
