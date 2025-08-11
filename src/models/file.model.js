@@ -11,6 +11,7 @@ const fileSchema = new mongoose.Schema({
   resourceType: {type: String, trim: true},
   format: {type: String, trim: true},
   deliveryType: {type: String, trim: true, default: 'upload'},
+  publicViewUrl: {type: String, trim: true},
   fileSize: {type: Number, required: true},
   mimeType: {type: String, required: true},
   folderId: {type: mongoose.Schema.Types.ObjectId, ref: 'Folder'},
@@ -27,6 +28,9 @@ fileSchema.index({name: 'text', description: 'text'});
 
 fileSchema.plugin(paginate);
 
+/**
+ * @typedef File
+ */
 const File = mongoose.model('File', fileSchema);
 
 module.exports = File;

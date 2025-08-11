@@ -8,6 +8,7 @@ const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
 const {getPaginateConfig} = require('../utils/queryPHandler');
 const Busboy = require('busboy');
 const {fileUploadService} = require('../microservices');
+const {mapResourceType} = require('../utils/cloudinary');
 
 const initUpload = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
@@ -106,12 +107,14 @@ const uploadFile = catchAsync(async (req, res) => {
           });
       });
 
+      const resourceType = mapResourceType(mimeType);
+
       fileUploadService
         .uploadStreamToCloudinary({
           stream: file,
           folder: folderPath,
           publicId: `${uuid.v4()}-${base}`,
-          resourceType: 'auto',
+          resourceType,
         })
         .then(async uploadResult => {
           finished = true;
@@ -136,7 +139,10 @@ const uploadFile = catchAsync(async (req, res) => {
             folderId,
           });
 
-          res.status(httpStatus.CREATED).send({status: true, uploadId, file: created});
+          const createdObj = created.toObject ? created.toObject() : created;
+          const fileWithUrl = {...createdObj, url: createdObj.publicViewUrl || createdObj.filePath};
+
+          res.status(httpStatus.CREATED).send({status: true, uploadId, file: fileWithUrl});
         })
         .catch(async err => {
           await progressService.failUploadProgress(uploadId, {fileName}).catch(() => {});
@@ -160,7 +166,8 @@ const uploadFile = catchAsync(async (req, res) => {
 const getFiles = catchAsync(async (req, res) => {
   const {filters, options} = getPaginateConfig(req.query);
   const result = await fileService.queryFiles(filters, options);
-  res.send({status: true, ...result});
+  const resultsWithUrl = (result.results || []).map(f => ({...f, url: f.publicViewUrl || f.filePath}));
+  res.send({status: true, ...result, results: resultsWithUrl});
 });
 
 const getFile = catchAsync(async (req, res) => {
@@ -169,7 +176,8 @@ const getFile = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
   const data = file.toObject ? file.toObject() : file;
-  res.send({status: true, ...data});
+  const dataWithUrl = {...data, url: data.publicViewUrl || data.filePath};
+  res.send({status: true, ...dataWithUrl});
 });
 
 const downloadFile = catchAsync(async (req, res) => {
@@ -177,7 +185,7 @@ const downloadFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.filePath);
+  res.redirect(file.publicViewUrl || file.filePath);
 });
 
 const previewFile = catchAsync(async (req, res) => {
@@ -185,13 +193,14 @@ const previewFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.filePath);
+  res.redirect(file.publicViewUrl || file.filePath);
 });
 
 const updateFile = catchAsync(async (req, res) => {
   const file = await fileService.updateFileById(req.params.fileId, req.body);
   const data = file.toObject ? file.toObject() : file;
-  res.send({status: true, ...data});
+  const dataWithUrl = {...data, url: data.publicViewUrl || data.filePath};
+  res.send({status: true, ...dataWithUrl});
 });
 
 const deleteFile = catchAsync(async (req, res) => {
@@ -211,7 +220,9 @@ const searchFiles = catchAsync(async (req, res) => {
     options
   );
 
-  res.json({status: true, ...result});
+  const resultsWithUrl = (result.results || []).map(f => ({...f, url: f.publicViewUrl || f.filePath}));
+
+  res.json({status: true, ...result, results: resultsWithUrl});
 });
 
 const getTotalFiles = catchAsync(async (req, res) => {
