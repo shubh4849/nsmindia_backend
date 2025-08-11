@@ -85,10 +85,9 @@ function buildPublicViewUrl({cloudName, resourceType, publicId, extension}) {
   return `${base}/${path}/${publicId}${suffix}`;
 }
 
-function buildPublicUrlFromBase({baseUrl, key, extension}) {
+function buildPublicUrlFromBase({baseUrl, key}) {
   const base = baseUrl.replace(/\/$/, '');
-  const suffix = extension && extension.trim() ? `.${extension}` : '';
-  return `${base}/${key}${suffix}`;
+  return `${base}/${key}`;
 }
 
 module.exports = {mapResourceType, buildPublicViewUrl, resolveExtension, buildPublicUrlFromBase};

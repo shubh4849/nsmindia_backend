@@ -1,5 +1,4 @@
-const {S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand} = require('@aws-sdk/client-s3');
-const {Readable} = require('stream');
+const {S3Client, PutObjectCommand, DeleteObjectCommand} = require('@aws-sdk/client-s3');
 const config = require('../config/config');
 
 const s3 = new S3Client({
@@ -95,8 +94,5 @@ module.exports = {
     await deleteFromR2(publicId);
     return {result: 'ok'};
   },
-  deleteFolderIfEmpty: async folder => {
-    // No-op: S3 doesn't have folders; optional to implement listing and conditional deletes
-    return null;
-  },
+  deleteFolderIfEmpty: async () => null,
 };

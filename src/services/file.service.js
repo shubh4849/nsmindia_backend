@@ -56,19 +56,21 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
 
   const resourceType = mapResourceType(mimeType);
 
+  // Compute extension and include it in key
+  const extension = resolveExtension({format: undefined, mimeType, originalName});
+  const keyWithExt = extension ? `${folderPath}/${uniqueBase}.${extension}` : `${folderPath}/${uniqueBase}`;
+
   const uploadResult = await fileUploadService.uploadFileToCloudinary({
     fileBuffer: buffer,
     folder: folderPath,
-    publicId: uniqueBase,
+    publicId: uniqueBase + (extension ? `.${extension}` : ''),
     resourceType,
     mimeType,
   });
 
-  const extension = resolveExtension({format: uploadResult.format, mimeType, originalName});
   const publicViewUrl = buildPublicUrlFromBase({
     baseUrl: config.r2.publicBaseUrl,
-    key: uploadResult.public_id,
-    extension,
+    key: keyWithExt,
   });
 
   const fileBody = {
@@ -76,8 +78,8 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
     originalName,
     filePath: uploadResult.secure_url,
     publicViewUrl,
-    publicId: uploadResult.public_id,
-    key: uploadResult.public_id,
+    publicId: keyWithExt,
+    key: keyWithExt,
     resourceType: uploadResult.resource_type,
     format: extension || uploadResult.format,
     deliveryType: 'upload',
@@ -92,10 +94,12 @@ const createFileRecordFromUploadResult = async ({uploadResult, originalName, mim
   const base = fileUploadService.sanitizeBaseName(originalName || uploadResult.original_filename || 'file');
 
   const extension = resolveExtension({format: uploadResult.format, mimeType, originalName});
+  const key = uploadResult.public_id.includes('.')
+    ? uploadResult.public_id
+    : `${uploadResult.public_id}${extension ? `.${extension}` : ''}`;
   const publicViewUrl = buildPublicUrlFromBase({
     baseUrl: config.r2.publicBaseUrl,
-    key: uploadResult.public_id,
-    extension,
+    key,
   });
 
   const fileBody = {
@@ -103,8 +107,8 @@ const createFileRecordFromUploadResult = async ({uploadResult, originalName, mim
     originalName: originalName || uploadResult.original_filename || base,
     filePath: uploadResult.secure_url,
     publicViewUrl,
-    publicId: uploadResult.public_id,
-    key: uploadResult.public_id,
+    publicId: key,
+    key,
     resourceType: uploadResult.resource_type,
     format: extension || uploadResult.format,
     deliveryType: uploadResult.type || 'upload',
