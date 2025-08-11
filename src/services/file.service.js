@@ -4,24 +4,23 @@ const ApiError = require('../utils/ApiError');
 const {fileUploadService} = require('../microservices');
 const {v4: uuidv4} = require('uuid');
 const config = require('../config/config');
-const {mapResourceType, resolveExtension, buildPublicUrlFromBase} = require('../utils/cloudinary');
+const {mapResourceType, resolveExtension, buildPublicUrlFromBase} = require('../utils/storage');
 
 function deriveStorageIdentifiers(urlString) {
   try {
     const url = new URL(urlString);
     const path = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
 
-    // R2 path: <base>/<key>
+    // Public base path: <base>/<key>
     const r2Base = config.r2.publicBaseUrl.replace(/\/$/, '');
     const r2BaseUrl = new URL(r2Base);
     if (url.host === r2BaseUrl.host) {
-      // If base has path prefix, strip it
       const basePath = r2BaseUrl.pathname.replace(/^\//, '');
       const key = basePath && path.startsWith(`${basePath}/`) ? path.slice(basePath.length + 1) : path;
       return {publicId: key, resourceType: 'raw'};
     }
 
-    // Legacy Cloudinary path: .../<resourceType>/upload/.../<publicId>[.ext]
+    // Legacy upload-style path: .../<resourceType>/upload/.../<publicId>[.ext]
     const parts = path.split('/');
     const uploadIndex = parts.findIndex(p => p === 'upload');
     if (uploadIndex !== -1) {
@@ -56,11 +55,10 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
 
   const resourceType = mapResourceType(mimeType);
 
-  // Compute extension and include it in key
   const extension = resolveExtension({format: undefined, mimeType, originalName});
   const keyWithExt = extension ? `${folderPath}/${uniqueBase}.${extension}` : `${folderPath}/${uniqueBase}`;
 
-  const uploadResult = await fileUploadService.uploadFileToCloudinary({
+  const uploadResult = await fileUploadService.uploadFileToStorage({
     fileBuffer: buffer,
     folder: folderPath,
     publicId: uniqueBase + (extension ? `.${extension}` : ''),
@@ -158,7 +156,7 @@ const deleteFileById = async fileId => {
 
   try {
     if (publicId) {
-      const destroyRes = await fileUploadService.deleteFileFromCloudinary(publicId, {
+      const destroyRes = await fileUploadService.deleteFileFromStorage(publicId, {
         resource_type: resourceType || 'raw',
         type: 'upload',
         invalidate: true,

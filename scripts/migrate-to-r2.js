@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const {S3Client, HeadObjectCommand, PutObjectCommand} = require('@aws-sdk/client-s3');
 const config = require('../src/config/config');
 const {File} = require('../src/models');
-const {resolveExtension, buildPublicUrlFromBase} = require('../src/utils/cloudinary');
+const {resolveExtension, buildPublicUrlFromBase} = require('../src/utils/storage');
 
 const s3 = new S3Client({
   region: config.r2.region,

@@ -53,12 +53,16 @@ async function deleteFromR2(key) {
 }
 
 function buildPublicUrlFromKey(key) {
-  return `${config.r2.publicBaseUrl.replace(/\/$/, '')}/${key}`;
+  const base = config.r2 && config.r2.publicBaseUrl;
+  if (!base) {
+    throw new Error('R2_PUBLIC_BASE_URL or R2_PUBLIC_DEVELOPMENT_URL is not configured');
+  }
+  return `${base.replace(/\/$/, '')}/${key}`;
 }
 
 module.exports = {
   sanitizeBaseName,
-  uploadFileToCloudinary: async ({fileBuffer, folder, publicId, resourceType = 'raw', mimeType}) => {
+  uploadFileToStorage: async ({fileBuffer, folder, publicId, resourceType = 'raw', mimeType}) => {
     const key = `${folder}/${publicId}`;
     await uploadFileToR2({
       buffer: fileBuffer,
@@ -74,7 +78,7 @@ module.exports = {
       type: 'upload',
     };
   },
-  uploadStreamToCloudinary: async ({stream, folder, publicId, resourceType = 'raw', mimeType}) => {
+  uploadStreamToStorage: async ({stream, folder, publicId, resourceType = 'raw', mimeType}) => {
     const key = `${folder}/${publicId}`;
     await uploadStreamToR2({
       stream,
@@ -90,7 +94,7 @@ module.exports = {
       type: 'upload',
     };
   },
-  deleteFileFromCloudinary: async publicId => {
+  deleteFileFromStorage: async publicId => {
     await deleteFromR2(publicId);
     return {result: 'ok'};
   },

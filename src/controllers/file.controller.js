@@ -8,7 +8,7 @@ const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
 const {getPaginateConfig} = require('../utils/queryPHandler');
 const Busboy = require('busboy');
 const {fileUploadService} = require('../microservices');
-const {mapResourceType} = require('../utils/cloudinary');
+const {mapResourceType, resolveExtension} = require('../utils/storage');
 
 const initUpload = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
@@ -108,13 +108,17 @@ const uploadFile = catchAsync(async (req, res) => {
       });
 
       const resourceType = mapResourceType(mimeType);
+      const ext = resolveExtension({format: undefined, mimeType, originalName: fileName});
+      const idBase = `${uuid.v4()}-${base}`;
+      const publicId = ext ? `${idBase}.${ext}` : idBase;
 
       fileUploadService
-        .uploadStreamToCloudinary({
+        .uploadStreamToStorage({
           stream: file,
           folder: folderPath,
-          publicId: `${uuid.v4()}-${base}`,
+          publicId,
           resourceType,
+          mimeType,
         })
         .then(async uploadResult => {
           finished = true;

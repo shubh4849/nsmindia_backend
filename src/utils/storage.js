@@ -23,31 +23,24 @@ function mapResourceType(mime) {
   ]);
 
   if (RAW_MIME_SET.has(m)) return 'raw';
-
   if (m === 'application/pdf') return 'image';
-
   return 'raw';
 }
 
 const MIME_EXTENSION_MAP = {
-  // Office (OOXML)
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-  // Legacy Office
   'application/msword': 'doc',
   'application/vnd.ms-excel': 'xls',
   'application/vnd.ms-powerpoint': 'ppt',
-  // ODF
   'application/vnd.oasis.opendocument.text': 'odt',
   'application/vnd.oasis.opendocument.spreadsheet': 'ods',
   'application/vnd.oasis.opendocument.presentation': 'odp',
-  // Text-ish
   'text/plain': 'txt',
   'text/csv': 'csv',
   'application/json': 'json',
   'application/xml': 'xml',
-  // Images (in case format missing)
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/png': 'png',
@@ -55,7 +48,6 @@ const MIME_EXTENSION_MAP = {
   'image/svg+xml': 'svg',
   'image/webp': 'webp',
   'application/pdf': 'pdf',
-  // Videos
   'video/mp4': 'mp4',
   'video/webm': 'webm',
   'video/ogg': 'ogv',
@@ -78,16 +70,9 @@ function resolveExtension({format, mimeType, originalName}) {
   return MIME_EXTENSION_MAP[m] || '';
 }
 
-function buildPublicViewUrl({cloudName, resourceType, publicId, extension}) {
-  const base = `https://res.cloudinary.com/${cloudName}`;
-  const path = resourceType === 'image' ? 'image/upload' : resourceType === 'video' ? 'video/upload' : 'raw/upload';
-  const suffix = extension && extension.trim() ? `.${extension}` : '';
-  return `${base}/${path}/${publicId}${suffix}`;
-}
-
 function buildPublicUrlFromBase({baseUrl, key}) {
   const base = baseUrl.replace(/\/$/, '');
   return `${base}/${key}`;
 }
 
-module.exports = {mapResourceType, buildPublicViewUrl, resolveExtension, buildPublicUrlFromBase};
+module.exports = {mapResourceType, resolveExtension, buildPublicUrlFromBase};
