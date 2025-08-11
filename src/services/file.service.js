@@ -3,6 +3,8 @@ const {File} = require('../models');
 const ApiError = require('../utils/ApiError');
 const {fileUploadService} = require('../microservices');
 const {v4: uuidv4} = require('uuid');
+const config = require('../config/config');
+const {mapResourceType, buildPublicViewUrl, resolveExtension} = require('../utils/cloudinary');
 
 function deriveCloudinaryIdentifiers(secureUrl) {
   try {
@@ -36,21 +38,32 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
   const base = fileUploadService.sanitizeBaseName(originalName);
   const uniqueBase = `${uuidv4()}-${base}`;
 
+  const resourceType = mapResourceType(mimeType);
+
   const uploadResult = await fileUploadService.uploadFileToCloudinary({
     fileBuffer: buffer,
     folder: folderPath,
     publicId: uniqueBase,
-    resourceType: 'auto',
+    resourceType,
+  });
+
+  const extension = resolveExtension({format: uploadResult.format, mimeType, originalName});
+  const publicViewUrl = buildPublicViewUrl({
+    cloudName: config.cloudinary.cloudName,
+    resourceType: uploadResult.resource_type,
+    publicId: uploadResult.public_id,
+    extension,
   });
 
   const fileBody = {
     name: base || originalName,
     originalName,
     filePath: uploadResult.secure_url,
+    publicViewUrl,
     publicId: uploadResult.public_id,
     key: uploadResult.public_id,
     resourceType: uploadResult.resource_type,
-    format: uploadResult.format,
+    format: extension || uploadResult.format,
     deliveryType: 'upload',
     fileSize,
     mimeType,
@@ -61,14 +74,24 @@ const createFile = async ({buffer, originalName, mimeType, fileSize, folderId}) 
 
 const createFileRecordFromUploadResult = async ({uploadResult, originalName, mimeType, fileSize, folderId}) => {
   const base = fileUploadService.sanitizeBaseName(originalName || uploadResult.original_filename || 'file');
+
+  const extension = resolveExtension({format: uploadResult.format, mimeType, originalName});
+  const publicViewUrl = buildPublicViewUrl({
+    cloudName: config.cloudinary.cloudName,
+    resourceType: uploadResult.resource_type || mapResourceType(mimeType),
+    publicId: uploadResult.public_id,
+    extension,
+  });
+
   const fileBody = {
     name: base || originalName,
     originalName: originalName || uploadResult.original_filename || base,
     filePath: uploadResult.secure_url,
+    publicViewUrl,
     publicId: uploadResult.public_id,
     key: uploadResult.public_id,
     resourceType: uploadResult.resource_type,
-    format: uploadResult.format,
+    format: extension || uploadResult.format,
     deliveryType: uploadResult.type || 'upload',
     fileSize,
     mimeType: mimeType || uploadResult.resource_type,
