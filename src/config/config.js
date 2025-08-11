@@ -40,11 +40,6 @@ if (error) {
   throw new Error(`Config validation error: ${error.message}`);
 }
 
-const computedPublicBaseUrl = (envVars.R2_PUBLIC_BASE_URL || envVars.R2_PUBLIC_DEVELOPMENT_URL || '').trim();
-if (!computedPublicBaseUrl) {
-  throw new Error('Config validation error: R2_PUBLIC_BASE_URL or R2_PUBLIC_DEVELOPMENT_URL must be set');
-}
-
 module.exports = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
@@ -53,7 +48,7 @@ module.exports = {
     accessKeyId: envVars.R2_ACCESS_KEY_ID,
     secretAccessKey: envVars.R2_SECRET_ACCESS_KEY,
     bucket: envVars.R2_BUCKET,
-    publicBaseUrl: computedPublicBaseUrl.replace(/\/$/, ''),
+    publicBaseUrl: envVars.R2_PUBLIC_DEVELOPMENT_URL,
     forcePathStyle: envVars.R2_FORCE_PATH_STYLE === 'true',
     region: envVars.R2_REGION,
     endpoint: `https://${envVars.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
