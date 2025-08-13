@@ -64,18 +64,6 @@ app.get('/folders', async (req, res) => {
   }
 });
 
-app.get('/folders/:folderId', async (req, res) => {
-  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
-  try {
-    const doc = await Folder.findById(req.params.folderId);
-    if (!doc) return res.status(httpStatus.NOT_FOUND).json({status: false, message: 'Folder not found'});
-    res.json({status: true, ...(doc.toObject ? doc.toObject() : doc)});
-  } catch (e) {
-    console.error('[FolderService] /folders/:id error', e?.message);
-    res.status(500).json({status: false, message: 'internal error'});
-  }
-});
-
 app.get('/folders/count', async (req, res) => {
   if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
   try {
@@ -94,6 +82,19 @@ app.get('/folders/tree', async (req, res) => {
     res.json({status: true, results: folders});
   } catch (e) {
     console.error('[FolderService] /folders/tree error', e?.message);
+    res.status(500).json({status: false, message: 'internal error'});
+  }
+});
+
+// Place param route AFTER static routes to avoid catching '/tree', '/count'
+app.get('/folders/:folderId([0-9a-fA-F]{24})', async (req, res) => {
+  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
+  try {
+    const doc = await Folder.findById(req.params.folderId);
+    if (!doc) return res.status(httpStatus.NOT_FOUND).json({status: false, message: 'Folder not found'});
+    res.json({status: true, ...(doc.toObject ? doc.toObject() : doc)});
+  } catch (e) {
+    console.error('[FolderService] /folders/:id error', e?.message);
     res.status(500).json({status: false, message: 'internal error'});
   }
 });

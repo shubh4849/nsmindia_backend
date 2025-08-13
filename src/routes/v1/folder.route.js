@@ -20,20 +20,41 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
   const path = pathBuilder(req);
   const url = `${config.services.folderServiceUrl}${path}` + (req._parsedUrl.search || '');
   const method = init.method || req.method;
+  const startedAt = Date.now();
+  const rid = `${startedAt}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
   try {
-    console.log('🔁 [FolderProxy] →', method, url);
+    console.log(`🛰️  [FolderProxy:${rid}] prepare`, {method, url, path, search: req._parsedUrl.search || ''});
     const upstream = await fetch(url, {
       method,
       headers: init.headers || {'Content-Type': 'application/json'},
       body: init.body || (method !== 'GET' && method !== 'HEAD' ? JSON.stringify(req.body || {}) : undefined),
       agent: getAgent(url),
     });
-    console.log('✅ [FolderProxy] ←', method, url, 'status:', upstream.status);
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`✅ [FolderProxy:${rid}] upstream`, {status: upstream.status, ok: upstream.ok, elapsedMs});
+    // If upstream failed (>=400), fallback to local (log body snippet for diagnostics)
+    if (!upstream.ok) {
+      let snippet = '';
+      try {
+        const text = await upstream.text();
+        snippet = text ? text.substring(0, 600) : '';
+      } catch (e) {
+        snippet = `<<failed to read body: ${e?.message}>>`;
+      }
+      console.log(`↩️  [FolderProxy:${rid}] non-OK; falling back`, {
+        status: upstream.status,
+        elapsedMs,
+        bodySnippet: snippet,
+      });
+      return next();
+    }
     res.status(upstream.status);
     if (upstream.body) {
       upstream.body.pipe(res);
       upstream.body.on('error', err => {
-        console.log('⚠️  [FolderProxy] stream error', {url, err: err?.message});
+        console.log(`⚠️  [FolderProxy:${rid}] stream error`, {url, err: err?.message});
         try {
           res.end();
         } catch {}
@@ -42,7 +63,8 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
       res.end();
     }
   } catch (e) {
-    console.log('↩️  [FolderProxy] Fallback to local due to error:', e?.message, 'for', method, url);
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`💥 [FolderProxy:${rid}] error; falling back`, {err: e?.message, elapsedMs, url});
     next();
   }
 }

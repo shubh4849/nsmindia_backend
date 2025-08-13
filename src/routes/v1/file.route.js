@@ -3,8 +3,16 @@ const validate = require('../../middlewares/validate');
 const fileValidation = require('../../validations/file.validation');
 const fileController = require('../../controllers/file.controller');
 const fetch = require('node-fetch');
+const http = require('http');
+const https = require('https');
 const config = require('../../config/config');
 const router = express.Router();
+
+function getAgent(url) {
+  return url.startsWith('https')
+    ? new https.Agent({keepAlive: true, family: 4})
+    : new http.Agent({keepAlive: true, family: 4});
+}
 
 async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
   if (!config.services.fileServiceUrl) return next();
@@ -17,8 +25,13 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
       method,
       headers: init.headers || {'Content-Type': 'application/json'},
       body: init.body || (method !== 'GET' && method !== 'HEAD' ? JSON.stringify(req.body || {}) : undefined),
+      agent: getAgent(url),
     });
     console.log('✅ [FileProxy] ←', method, url, 'status:', upstream.status);
+    if (!upstream.ok) {
+      console.log('↩️  [FileProxy] Upstream non-OK, falling back to local for', method, url);
+      return next();
+    }
     res.status(upstream.status);
     if (upstream.body) {
       upstream.body.pipe(res);
