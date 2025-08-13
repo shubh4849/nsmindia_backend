@@ -61,15 +61,20 @@ app.get('/folders/root/contents', async (req, res) => {
   res.json({status: true, results});
 });
 
-app.get('/healthz', (req, res) => res.json({status: 'ok'}));
+app.get('/healthz', (req, res) => {
+  console.log('[FolderService] /healthz');
+  res.json({status: 'ok'});
+});
 
 const PORT = process.env.PORT || 3001;
 const MONGODB_URL = process.env.MONGODB_URL;
+console.log('[FolderService] PORT env:', process.env.PORT);
+console.log('[FolderService] MONGODB_URL present:', Boolean(MONGODB_URL));
 
 mongoose
   .connect(MONGODB_URL, {useNewUrlParser: true, useUnifiedTopology: true})
   .then(() => {
-    app.listen(PORT, () => console.log(`Folder service listening on ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => console.log(`Folder service listening on ${PORT}`));
   })
   .catch(err => {
     console.error('Mongo connect error', err);

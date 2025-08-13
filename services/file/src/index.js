@@ -70,15 +70,20 @@ app.get('/files/search', async (req, res) => {
   res.json({status: true, results: docs});
 });
 
-app.get('/healthz', (req, res) => res.json({status: 'ok'}));
+app.get('/healthz', (req, res) => {
+  console.log('[FileService] /healthz');
+  res.json({status: 'ok'});
+});
 
 const PORT = process.env.PORT || 3002;
 const MONGODB_URL = process.env.MONGODB_URL;
+console.log('[FileService] PORT env:', process.env.PORT);
+console.log('[FileService] MONGODB_URL present:', Boolean(MONGODB_URL));
 
 mongoose
   .connect(MONGODB_URL, {useNewUrlParser: true, useUnifiedTopology: true})
   .then(() => {
-    app.listen(PORT, () => console.log(`File service listening on ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => console.log(`File service listening on ${PORT}`));
   })
   .catch(err => {
     console.error('Mongo connect error', err);
