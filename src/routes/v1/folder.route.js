@@ -3,9 +3,17 @@ const validate = require('../../middlewares/validate');
 const folderValidation = require('../../validations/folder.validation');
 const folderController = require('../../controllers/folder.controller');
 const fetch = require('node-fetch');
+const http = require('http');
+const https = require('https');
 const config = require('../../config/config');
 
 const router = express.Router();
+
+function getAgent(url) {
+  return url.startsWith('https')
+    ? new https.Agent({keepAlive: true, family: 4})
+    : new http.Agent({keepAlive: true, family: 4});
+}
 
 async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
   if (!config.services.folderServiceUrl) return next();
@@ -18,6 +26,7 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
       method,
       headers: init.headers || {'Content-Type': 'application/json'},
       body: init.body || (method !== 'GET' && method !== 'HEAD' ? JSON.stringify(req.body || {}) : undefined),
+      agent: getAgent(url),
     });
     console.log('✅ [FolderProxy] ←', method, url, 'status:', upstream.status);
     res.status(upstream.status);

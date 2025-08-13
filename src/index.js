@@ -18,6 +18,12 @@ mongoose
 
 app.listen(config.port, () => {
   console.log(`NSM INDIA BACKEND app listening on port ${config.port}!`);
+  // Print current proxy targets for clarity
+  try {
+    console.log('[Gateway] SSE_SERVICE_URL =', config.sse?.baseUrl || 'not set');
+    console.log('[Gateway] FOLDER_SERVICE_URL =', config.services?.folderServiceUrl || 'not set');
+    console.log('[Gateway] FILE_SERVICE_URL =', config.services?.fileServiceUrl || 'not set');
+  } catch {}
   // Start background consumers (progress consumer is optional when proxying to external SSE)
   if (config.sse.progressConsumerEnabled) startProgressConsumer();
   startFileConsumer();

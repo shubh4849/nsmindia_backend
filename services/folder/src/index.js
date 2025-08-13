@@ -33,51 +33,83 @@ app.use((req, res, next) => {
   next();
 });
 
+const isDbReady = () => mongoose.connection?.readyState === 1;
+
 // Health & debug
 app.get('/healthz', (req, res) => {
-  res.json({status: 'ok'});
+  res.json({status: 'ok', dbReady: isDbReady()});
 });
 app.get('/debug', (req, res) => {
-  res.json({status: 'debug_ok', port: process.env.PORT, t: Date.now()});
+  res.json({status: 'debug_ok', port: process.env.PORT, t: Date.now(), dbReady: isDbReady()});
 });
 // Root health for platforms that probe '/'
 app.get('/', (req, res) => res.json({status: 'ok'}));
 
 // Reads
 app.get('/folders', async (req, res) => {
-  const {page = 1, limit = 10, name, description, parentId} = req.query;
-  const q = {};
-  if (name) q.name = new RegExp(name, 'i');
-  if (description) q.description = new RegExp(description, 'i');
-  if (Object.prototype.hasOwnProperty.call(req.query, 'parentId')) q.parentId = parentId;
-  const docs = await Folder.find(q)
-    .skip((Number(page) - 1) * Number(limit))
-    .limit(Number(limit));
-  res.json({status: true, results: docs});
+  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
+  try {
+    const {page = 1, limit = 10, name, description, parentId} = req.query;
+    const q = {};
+    if (name) q.name = new RegExp(name, 'i');
+    if (description) q.description = new RegExp(description, 'i');
+    if (Object.prototype.hasOwnProperty.call(req.query, 'parentId')) q.parentId = parentId;
+    const docs = await Folder.find(q)
+      .skip((Number(page) - 1) * Number(limit))
+      .limit(Number(limit));
+    res.json({status: true, results: docs});
+  } catch (e) {
+    console.error('[FolderService] /folders error', e?.message);
+    res.status(500).json({status: false, message: 'internal error'});
+  }
 });
 
 app.get('/folders/:folderId', async (req, res) => {
-  const doc = await Folder.findById(req.params.folderId);
-  if (!doc) return res.status(httpStatus.NOT_FOUND).json({status: false, message: 'Folder not found'});
-  res.json({status: true, ...(doc.toObject ? doc.toObject() : doc)});
+  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
+  try {
+    const doc = await Folder.findById(req.params.folderId);
+    if (!doc) return res.status(httpStatus.NOT_FOUND).json({status: false, message: 'Folder not found'});
+    res.json({status: true, ...(doc.toObject ? doc.toObject() : doc)});
+  } catch (e) {
+    console.error('[FolderService] /folders/:id error', e?.message);
+    res.status(500).json({status: false, message: 'internal error'});
+  }
 });
 
 app.get('/folders/count', async (req, res) => {
-  const count = await Folder.countDocuments();
-  res.json({status: true, count});
+  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
+  try {
+    const count = await Folder.countDocuments();
+    res.json({status: true, count});
+  } catch (e) {
+    console.error('[FolderService] /folders/count error', e?.message);
+    res.status(500).json({status: false, message: 'internal error'});
+  }
 });
 
 app.get('/folders/tree', async (req, res) => {
-  const folders = await Folder.find().select('_id name parentId path');
-  res.json({status: true, results: folders});
+  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
+  try {
+    const folders = await Folder.find().select('_id name parentId path');
+    res.json({status: true, results: folders});
+  } catch (e) {
+    console.error('[FolderService] /folders/tree error', e?.message);
+    res.status(500).json({status: false, message: 'internal error'});
+  }
 });
 
 app.get('/folders/root/contents', async (req, res) => {
-  const results = await Folder.find({parentId: null});
-  res.json({status: true, results});
+  if (!isDbReady()) return res.status(503).json({status: false, message: 'database not ready'});
+  try {
+    const results = await Folder.find({parentId: null});
+    res.json({status: true, results});
+  } catch (e) {
+    console.error('[FolderService] /folders/root/contents error', e?.message);
+    res.status(500).json({status: false, message: 'internal error'});
+  }
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3001;
 const MONGODB_URL = process.env.MONGODB_URL;
 
 // Start server first
