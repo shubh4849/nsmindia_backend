@@ -231,7 +231,8 @@ const uploadFile = catchAsync(async (req, res) => {
 const getFiles = catchAsync(async (req, res) => {
   const {filters, options} = getPaginateConfig(req.query);
   const result = await fileService.queryFiles(filters, options);
-  res.send({status: true, ...result});
+  const payload = {status: true, ...result};
+  res.send(payload);
 });
 
 const getFile = catchAsync(async (req, res) => {
@@ -240,7 +241,8 @@ const getFile = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
   const data = file.toObject ? file.toObject() : file;
-  res.send({status: true, ...data});
+  const payload = {status: true, ...data};
+  res.send(payload);
 });
 
 const downloadFile = catchAsync(async (req, res) => {
@@ -281,8 +283,8 @@ const searchFiles = catchAsync(async (req, res) => {
     },
     options
   );
-
-  res.json({status: true, ...result});
+  const payload = {status: true, ...result};
+  res.json(payload);
 });
 
 const getTotalFiles = catchAsync(async (req, res) => {

@@ -111,7 +111,7 @@ app.get('/folders/root/contents', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 const MONGODB_URL = process.env.MONGODB_URL;
 
 // Start server first

@@ -78,7 +78,7 @@ const getRootContents = catchAsync(async (req, res) => {
   const totalFiles = filesPage.totalResults || 0;
   const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
-  res.json({
+  const responsePayload = {
     status: true,
     folders: folders.results || [],
     files,
@@ -90,7 +90,8 @@ const getRootContents = catchAsync(async (req, res) => {
       totalPagesFolders: Math.ceil((folders.results || []).length / limit),
       totalPagesFiles,
     },
-  });
+  };
+  res.json(responsePayload);
 });
 
 const getFolderContents = catchAsync(async (req, res) => {
@@ -107,7 +108,7 @@ const getFolderContents = catchAsync(async (req, res) => {
   const totalFiles = filesPage.totalResults || 0;
   const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / parseInt(limit));
 
-  res.json({
+  const responsePayload = {
     status: true,
     folders,
     files,
@@ -119,7 +120,8 @@ const getFolderContents = catchAsync(async (req, res) => {
       totalPagesFolders: Math.ceil(folders.length / limit),
       totalPagesFiles: totalPagesFiles,
     },
-  });
+  };
+  res.json(responsePayload);
 });
 
 const getFolderBreadcrumb = catchAsync(async (req, res) => {

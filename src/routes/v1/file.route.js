@@ -28,6 +28,45 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
       agent: getAgent(url),
     });
     console.log('✅ [FileProxy] ←', method, url, 'status:', upstream.status);
+    if (upstream.ok) {
+      const isList = path === '/files';
+      const isSearch = path === '/files/search';
+      const isCount = path === '/files/count';
+      const getMatch = path.match(/^\/files\/([^/]+)$/);
+      if (isList || isSearch || isCount || getMatch) {
+        try {
+          const text = await upstream.text();
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = text;
+          }
+          // no-op: removed DIFF logs
+
+          // Normalization: ensure {status: true, ...}
+          let normalized = parsed;
+          if (parsed && typeof parsed === 'object') {
+            if (isList || isSearch) {
+              if (!('status' in parsed)) normalized = {status: true, ...parsed};
+            } else if (isCount) {
+              const count = parsed.count ?? parsed.total ?? 0;
+              normalized = {status: true, count};
+            } else if (getMatch) {
+              const body = parsed.results ? parsed.results[0] : parsed;
+              normalized = {status: true, ...(body || {})};
+            }
+          }
+
+          res.set('Content-Type', 'application/json');
+          return res
+            .status(upstream.status)
+            .send(typeof normalized === 'string' ? normalized : JSON.stringify(normalized));
+        } catch (e) {
+          // fall back to normal flow
+        }
+      }
+    }
     if (!upstream.ok) {
       console.log('↩️  [FileProxy] Upstream non-OK, falling back to local for', method, url);
       return next();
