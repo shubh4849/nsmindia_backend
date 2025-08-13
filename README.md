@@ -157,7 +157,7 @@ File Service
 
 - Run monolith: `npm run dev`
 - Run SSE locally: `npm run sse:dev` (set AWS env and queue URL)
-- Use internal proxies only in cloud; locally, use `http://localhost:3003` for SSE
+- Use internal proxies only in cloud; locally, use `http://localhost:8080` for SSE
 
 ## Notes
 

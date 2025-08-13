@@ -43,7 +43,7 @@ const envVarsSchema = Joi.object()
     // SSE service (external)
     SSE_SERVICE_URL: Joi.string()
       .uri()
-      .default('http://localhost:3003'),
+      .default('http://localhost:8080'),
     SQS_PROGRESS_CONSUMER_ENABLED: Joi.string()
       .valid('true', 'false')
       .default('false'),

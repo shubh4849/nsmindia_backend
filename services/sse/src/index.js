@@ -5,7 +5,7 @@ require('dotenv').config();
 
 const app = express();
 
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 8080;
 const QUEUE_URL = process.env.SQS_PROGRESS_EVENTS_URL;
 const REGION = process.env.AWS_REGION;
 const ACCESS_KEY_ID = process.env.AWS_SQS_ACCESS_KEY || process.env.AWS_ACCESS_KEY_ID;

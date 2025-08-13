@@ -78,7 +78,7 @@ app.get('/files/search', async (req, res) => {
   res.json({status: true, results: docs});
 });
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 8080;
 const MONGODB_URL = process.env.MONGODB_URL;
 
 app.listen(PORT, '0.0.0.0', () => console.log(`File service listening on ${PORT}`));
