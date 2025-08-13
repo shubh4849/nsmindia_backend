@@ -19,6 +19,7 @@ const folderSchema = new Schema(
 const Folder = model('Folder', folderSchema, 'folders');
 
 const app = express();
+app.set('json spaces', 2);
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
