@@ -32,6 +32,8 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
       console.log('↩️  [FileProxy] Upstream non-OK, falling back to local for', method, url);
       return next();
     }
+    const ct = upstream.headers.get('content-type');
+    if (ct) res.set('Content-Type', ct);
     res.status(upstream.status);
     if (upstream.body) {
       upstream.body.pipe(res);
