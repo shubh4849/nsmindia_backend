@@ -125,6 +125,7 @@ app.get('/events/upload/:uploadId', (req, res) => {
 
 app.get('/healthz', (req, res) => res.json({status: 'ok'}));
 app.get('/debug', (req, res) => res.json({status: 'debug_ok', port: PORT, t: Date.now()}));
+app.get('/', (req, res) => res.json({status: 'ok'}));
 
 // Start server first, then begin polling
 app.listen(PORT, '0.0.0.0', () => {

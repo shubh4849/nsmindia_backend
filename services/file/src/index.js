@@ -38,6 +38,7 @@ app.use((req, res, next) => {
 
 app.get('/healthz', (req, res) => res.json({status: 'ok'}));
 app.get('/debug', (req, res) => res.json({status: 'debug_ok', port: process.env.PORT, t: Date.now()}));
+app.get('/', (req, res) => res.json({status: 'ok'}));
 
 app.get('/files', async (req, res) => {
   const {page = 1, limit = 10, name, description, folderId} = req.query;

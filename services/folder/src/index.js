@@ -40,6 +40,8 @@ app.get('/healthz', (req, res) => {
 app.get('/debug', (req, res) => {
   res.json({status: 'debug_ok', port: process.env.PORT, t: Date.now()});
 });
+// Root health for platforms that probe '/'
+app.get('/', (req, res) => res.json({status: 'ok'}));
 
 // Reads
 app.get('/folders', async (req, res) => {
