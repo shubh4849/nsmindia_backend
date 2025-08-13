@@ -1,36 +1,170 @@
-# Node-starter-template-v2
+# NSM India Backend – Microservices-ready Node/Express
 
-1. Config - You can add your all configuation and external settings in this
-    - contains the validation and logic to export the env variables
-    - contains the loggers to handle custom logs, errors or exceptions etc occuring throughout the codebase be it internal or your own logs
+This repository contains a production-grade Express backend that has been migrated from a monolith into a
+microservices-ready architecture. It includes:
 
-2. Constants - contains the constant variables that could be types, options that are used in different models, validations, controllers etc
+- An API Gateway (the original monolith), still hosting write flows and proxying reads/writes to services
+- A standalone SSE service for real-time upload progress via AWS SQS
+- Read services for Folders and Files, ready to take over writes when needed
 
-3. Controllers - contains the function that takes over the request once its validated & authenticated by the middlewares. This is the place where you ensure all the checks/errorHandling, data manipulation/extraction & prepartion of data which will be required by the services.
+The goal is to deliver a clear separation of concerns while keeping developer experience strong during the transition.
 
-4. Microservices - contains the 3rd party services for example, notifications, fileUpload, sms etc. 
+## High-level Architecture
 
-5. Middlewares - contains the function that are used for validation, authentication, or handling the errors thrown by any service, controller or other functions.
+- Monolith (API Gateway)
 
-6. Models - Contains the schema of collections and plugins which can be integrated into schema
-  - for example: we have paginate plugin that supports - pagination, filtering, sorting, ordering, location search, population 
+  - Exposes `/v1/...` routes
+  - Hosts file upload pipeline (Cloudflare R2), validation, and fallbacks
+  - Publishes events to SQS: file, folder, progress
+  - Proxies requests to microservices when configured
+  - Falls back to local handlers if upstream is unavailable
 
-7. routes - contains versions of all api(s) routes. In initial setup you will have all routes starting from v1 later on you can upgrade.
+- SSE Service
 
-8. services - contains the function that interacts with Database to do the CRUD operations. Since we are not using Typescript in this templates. It's highly recommended that you handle all your exception and checks in the respective controller before interacting with any service. Services are purely for performing CRUD ops, period.
+  - Consumes `progress-events-queue` from SQS
+  - Streams events to clients via Server-Sent Events
+  - Monolith proxies `/v1/sse/upload-progress/:uploadId` to SSE service (or falls back to DB polling)
 
-9. utils - contains the utility functions that you use all across the codebase.
+- Folder Service (read endpoints)
 
-10. validations - contains the validation schemas for each api. Its again highly recommended that if we are not writing test cases then please maintain validators so that we can avoid unnecessary edge cases or wrong request. First thing that we do is validate the request then move to authentication, period. 
+  - Read operations for folders (list, get, tree, counts)
+  - Accessible directly and via monolith proxy
 
-- app.js - contains  the configuration of your server
+- File Service (read endpoints)
+  - Read operations for files (list, get, search, counts)
+  - Accessible directly and via monolith proxy
 
-- index.js - boot up script
+## Repository Layout
 
-**Before You Start**
-- You have to save the .env file locally with required variables mentioned in config/config.js
-- If you don't use any or specific microservice then please remove their validation & cancel their export from config/config.js, otherwise app won't run.
+```
+src/
+  app.js                 # Express app setup (security, compression, CORS, routing)
+  index.js               # Server bootstrap, Mongo connect, background consumers
 
-_Codebase should be like a graden where everyone can move around easily and peacefully._
+  config/
+    config.js            # Central env validation (Joi), typed config object
+    logger.js, morgan.js # Logging and HTTP logging
 
-**_HAPPY CODING..._**
+  constants/             # Global constants (e.g., file types)
+  controllers/           # Request handlers (validation, orchestration)
+  middlewares/           # validate/error handling
+  models/                # Mongoose models (file.model.js, folder.model.js, uploadprogress.model.js)
+  routes/v1/             # Versioned routes
+    file.route.js        # Upload + CRUD + proxy hooks
+    folder.route.js      # Folder CRUD + proxy hooks
+    sse.route.js         # SSE proxy with fallback to DB polling
+  services/              # Business and persistence logic
+    file.service.js      # File CRUD + R2 integration + SQS file events
+    folder.service.js    # Folder CRUD + SQS folder events
+    progress.service.js  # Upload progress persistence and throttle helper
+    sse.service.js       # Mongo change streams + upload subscribers (monolith fallback)
+  microservices/
+    fileUpload.service.js# Cloudflare R2 (S3-compatible) storage helpers
+  utils/
+    sqs.js               # AWS SQS publish/poll/ack helpers
+    storage.js           # Type/extension helpers
+  validations/           # Joi schemas for API inputs
+  events/schemas.js      # Joi schemas for file/folder/progress events
+
+services/
+  sse/                   # Standalone SSE service
+    package.json
+    src/index.js         # Binds to PORT, polls SQS, SSE endpoint `/events/upload/:uploadId`
+  folder/                # Folder read service
+    package.json
+    src/index.js         # Binds to PORT, connects Mongo, `/folders`, `/healthz`
+  file/                  # File read service
+    package.json
+    src/index.js         # Binds to PORT, connects Mongo, `/files`, `/healthz`
+```
+
+## Data Flow
+
+- Upload
+
+  - Client: `POST /v1/files/upload/init` → returns `uploadId`
+  - Client: `POST /v1/files/upload` (multipart) with `uploadId`
+  - Monolith streams to R2 and writes progress to Mongo and SQS `progress-events-queue`
+  - SSE Service consumes SQS and pushes events to clients via `/events/upload/:uploadId`
+  - Monolith proxies `/v1/sse/upload-progress/:uploadId` to SSE service; falls back to DB polling if needed
+
+- Folder
+
+  - Monolith performs CRUD, publishes SQS folder events
+  - Read endpoints may be proxied to Folder service if `FOLDER_SERVICE_URL` is set
+
+- File
+  - Monolith performs CRUD (delete uses R2 delete), publishes SQS file events
+  - Read endpoints may be proxied to File service if `FILE_SERVICE_URL` is set
+
+## Proxy Strategy (API Gateway)
+
+Monolith supports optional proxying to services:
+
+- Set `SSE_SERVICE_URL` to stream via SSE service
+- Set `FOLDER_SERVICE_URL`, `FILE_SERVICE_URL` to forward reads/writes
+- If upstream is down or returns non-OK (e.g., 502), monolith falls back to local handlers
+- Loud logs with emojis indicate proxy path and outcomes
+
+Examples:
+
+- `🔁 [FolderProxy] → GET http://jubilant-simplicity.railway.internal/folders/count`
+- `✅ [FolderProxy] ← … status: 200`
+- `↩️ [FolderProxy] Fallback to local due to error: …`
+
+## Environment Variables
+
+Monolith (API Gateway)
+
+- `NODE_ENV`, `PORT`
+- `MONGODB_URL`
+- Cloudflare R2:
+  - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`
+  - `R2_PUBLIC_DEVELOPMENT_URL`, `R2_FORCE_PATH_STYLE`, `R2_REGION`
+- SQS:
+  - `AWS_REGION`, `AWS_SQS_ACCESS_KEY`, `AWS_SQS_SECRET_ACCESS_KEY`
+  - `SQS_FOLDER_EVENTS_URL`, `SQS_FILE_EVENTS_URL`, `SQS_PROGRESS_EVENTS_URL`
+- Proxies:
+  - `SSE_SERVICE_URL` (e.g., `http://sse-service.railway.internal`)
+  - `SQS_PROGRESS_CONSUMER_ENABLED` (default false; set true only if monolith should consume progress itself)
+  - `FOLDER_SERVICE_URL`, `FILE_SERVICE_URL` (internal or public base URLs, no trailing slash)
+
+SSE Service
+
+- `PORT` (injected by platform)
+- `AWS_REGION`, `AWS_SQS_ACCESS_KEY`, `AWS_SQS_SECRET_ACCESS_KEY`
+- `SQS_PROGRESS_EVENTS_URL`
+
+Folder Service
+
+- `PORT` (injected by platform)
+- `MONGODB_URL`
+
+File Service
+
+- `PORT` (injected by platform)
+- `MONGODB_URL`
+
+## Observability & Alarms
+
+- `/healthz` on SSE/Folder/File services; gateway responds normally
+- Add CloudWatch alarms on DLQs:
+  - Metric: `ApproximateNumberOfMessagesVisible` for each `*-dlq`
+  - Condition: `> 0` for 5 minutes
+  - Action: SNS email/Slack
+
+## Local Development
+
+- Run monolith: `npm run dev`
+- Run SSE locally: `npm run sse:dev` (set AWS env and queue URL)
+- Use internal proxies only in cloud; locally, use `http://localhost:3003` for SSE
+
+## Notes
+
+- Model files follow `name.model.js` naming and are exported via `models/index.js`
+- Services contain business logic; controllers handle validation and orchestration
+- Proxy fallbacks ensure resilience during service rollouts
+
+_Codebase should be like a garden where everyone can move around easily and peacefully._
+
+**Happy shipping.**
