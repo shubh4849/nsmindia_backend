@@ -2,6 +2,9 @@ const app = require('./app');
 const config = require('./config/config');
 const logger = require('./config/logger');
 const mongoose = require('mongoose');
+const {start: startProgressConsumer} = require('./consumers/progress.consumer');
+const {start: startFileConsumer} = require('./consumers/file.consumer');
+const {start: startFolderConsumer} = require('./consumers/folder.consumer');
 let server;
 
 mongoose
@@ -15,6 +18,10 @@ mongoose
 
 app.listen(config.port, () => {
   console.log(`NSM INDIA BACKEND app listening on port ${config.port}!`);
+  // Start background consumers (progress consumer is optional when proxying to external SSE)
+  if (config.sse.progressConsumerEnabled) startProgressConsumer();
+  startFileConsumer();
+  startFolderConsumer();
 });
 
 const exitHandler = () => {

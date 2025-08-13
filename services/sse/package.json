@@ -1,0 +1,16 @@
+{
+  "name": "sse-service",
+  "version": "1.0.0",
+  "description": "SSE service streaming upload progress from SQS",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.614.0",
+    "dotenv": "^16.1.4",
+    "express": "^4.18.2"
+  }
+}

@@ -8,7 +8,8 @@ const {fileTypes, ALL_ALLOWED_FILE_TYPES} = require('../constants');
 const {getPaginateConfig} = require('../utils/queryPHandler');
 const Busboy = require('busboy');
 const {fileUploadService} = require('../microservices');
-const {mapResourceType, resolveExtension} = require('../utils/storage');
+const sqs = require('../utils/sqs');
+const config = require('../config/config');
 
 const initUpload = catchAsync(async (req, res) => {
   const uploadId = uuid.v4();
@@ -45,7 +46,21 @@ const uploadFile = catchAsync(async (req, res) => {
 
   const throttledUpdate = progressService.throttle((bytes, size, meta) => {
     if (!uploadId) return;
+    // Persist to DB
     progressService.updateUploadProgress(uploadId, bytes, size || 0, meta).catch(() => {});
+    // Publish to SQS
+    sqs
+      .publish(config.aws.sqs.progressEventsUrl, {
+        event: 'UPLOAD_PROGRESS',
+        uploadId,
+        progress: size > 0 ? (bytes / size) * 100 : 0,
+        uploadedBytes: bytes,
+        fileSize: size || 0,
+        status: 'uploading',
+        fileName: meta?.fileName,
+        at: Date.now(),
+      })
+      .catch(() => {});
   }, 200);
 
   busboy.on('field', (name, val) => {
@@ -99,6 +114,16 @@ const uploadFile = catchAsync(async (req, res) => {
           .failUploadProgress(uploadId, {fileName})
           .catch(() => {})
           .finally(() => {
+            // Publish failure
+            sqs
+              .publish(config.aws.sqs.progressEventsUrl, {
+                event: 'UPLOAD_FAILED',
+                uploadId,
+                fileName,
+                at: Date.now(),
+              })
+              .catch(() => {});
+
             req.unpipe(busboy);
             try {
               busboy.removeAllListeners();
@@ -107,17 +132,12 @@ const uploadFile = catchAsync(async (req, res) => {
           });
       });
 
-      const resourceType = mapResourceType(mimeType);
-      const ext = resolveExtension({format: undefined, mimeType, originalName: fileName});
-      const idBase = `${uuid.v4()}-${base}`;
-      const publicId = ext ? `${idBase}.${ext}` : idBase;
-
       fileUploadService
         .uploadStreamToStorage({
           stream: file,
           folder: folderPath,
-          publicId,
-          resourceType,
+          publicId: `${uuid.v4()}-${base}`,
+          resourceType: 'raw',
           mimeType,
         })
         .then(async uploadResult => {
@@ -126,6 +146,19 @@ const uploadFile = catchAsync(async (req, res) => {
             fileName,
             status: 'completed',
           });
+          // Publish completion
+          sqs
+            .publish(config.aws.sqs.progressEventsUrl, {
+              event: 'UPLOAD_COMPLETED',
+              uploadId,
+              uploadedBytes,
+              fileSize: totalBytes || uploadedBytes,
+              status: 'completed',
+              fileName,
+              at: Date.now(),
+            })
+            .catch(() => {});
+
           try {
             console.log('[UploadProgress] final write', {
               uploadId,
@@ -143,13 +176,20 @@ const uploadFile = catchAsync(async (req, res) => {
             folderId,
           });
 
-          const createdObj = created.toObject ? created.toObject() : created;
-          const fileWithUrl = {...createdObj, url: createdObj.publicViewUrl || createdObj.filePath};
-
-          res.status(httpStatus.CREATED).send({status: true, uploadId, file: fileWithUrl});
+          res.status(httpStatus.CREATED).send({status: true, uploadId, file: created});
         })
         .catch(async err => {
           await progressService.failUploadProgress(uploadId, {fileName}).catch(() => {});
+          // Publish failure
+          sqs
+            .publish(config.aws.sqs.progressEventsUrl, {
+              event: 'UPLOAD_FAILED',
+              uploadId,
+              fileName,
+              at: Date.now(),
+            })
+            .catch(() => {});
+
           res.status(httpStatus.INTERNAL_SERVER_ERROR).send({status: false, message: err.message || 'Upload failed'});
         });
     });
@@ -157,11 +197,32 @@ const uploadFile = catchAsync(async (req, res) => {
 
   busboy.on('error', async err => {
     if (uploadId) await progressService.failUploadProgress(uploadId, {fileName}).catch(() => {});
+    // Publish failure
+    if (uploadId) {
+      sqs
+        .publish(config.aws.sqs.progressEventsUrl, {
+          event: 'UPLOAD_FAILED',
+          uploadId,
+          fileName,
+          at: Date.now(),
+        })
+        .catch(() => {});
+    }
     res.status(err.statusCode || httpStatus.BAD_REQUEST).send({status: false, message: err.message || 'Upload error'});
   });
 
   req.on('aborted', () => {
     if (uploadId) progressService.failUploadProgress(uploadId, {fileName}).catch(() => {});
+    if (uploadId) {
+      sqs
+        .publish(config.aws.sqs.progressEventsUrl, {
+          event: 'UPLOAD_FAILED',
+          uploadId,
+          fileName,
+          at: Date.now(),
+        })
+        .catch(() => {});
+    }
   });
 
   req.pipe(busboy);
@@ -170,8 +231,7 @@ const uploadFile = catchAsync(async (req, res) => {
 const getFiles = catchAsync(async (req, res) => {
   const {filters, options} = getPaginateConfig(req.query);
   const result = await fileService.queryFiles(filters, options);
-  const resultsWithUrl = (result.results || []).map(f => ({...f, url: f.publicViewUrl || f.filePath}));
-  res.send({status: true, ...result, results: resultsWithUrl});
+  res.send({status: true, ...result});
 });
 
 const getFile = catchAsync(async (req, res) => {
@@ -180,8 +240,7 @@ const getFile = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
   const data = file.toObject ? file.toObject() : file;
-  const dataWithUrl = {...data, url: data.publicViewUrl || data.filePath};
-  res.send({status: true, ...dataWithUrl});
+  res.send({status: true, ...data});
 });
 
 const downloadFile = catchAsync(async (req, res) => {
@@ -189,7 +248,7 @@ const downloadFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.publicViewUrl || file.filePath);
+  res.redirect(file.filePath);
 });
 
 const previewFile = catchAsync(async (req, res) => {
@@ -197,14 +256,13 @@ const previewFile = catchAsync(async (req, res) => {
   if (!file) {
     throw new ApiError(httpStatus.NOT_FOUND, 'File not found');
   }
-  res.redirect(file.publicViewUrl || file.filePath);
+  res.redirect(file.filePath);
 });
 
 const updateFile = catchAsync(async (req, res) => {
   const file = await fileService.updateFileById(req.params.fileId, req.body);
   const data = file.toObject ? file.toObject() : file;
-  const dataWithUrl = {...data, url: data.publicViewUrl || data.filePath};
-  res.send({status: true, ...dataWithUrl});
+  res.send({status: true, ...data});
 });
 
 const deleteFile = catchAsync(async (req, res) => {
@@ -224,9 +282,7 @@ const searchFiles = catchAsync(async (req, res) => {
     options
   );
 
-  const resultsWithUrl = (result.results || []).map(f => ({...f, url: f.publicViewUrl || f.filePath}));
-
-  res.json({status: true, ...result, results: resultsWithUrl});
+  res.json({status: true, ...result});
 });
 
 const getTotalFiles = catchAsync(async (req, res) => {

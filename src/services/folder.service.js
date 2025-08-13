@@ -1,6 +1,9 @@
 const httpStatus = require('http-status');
 const {Folder, File} = require('../models');
 const ApiError = require('../utils/ApiError');
+const sqs = require('../utils/sqs');
+const config = require('../config/config');
+const {folderEventSchema} = require('../events/schemas');
 
 const buildTree = (folders, parentId = null) => {
   const folderTree = [];
@@ -16,11 +19,25 @@ const buildTree = (folders, parentId = null) => {
   return folderTree;
 };
 
+const publishFolderEvent = async payload => {
+  const {error} = folderEventSchema.validate(payload);
+  if (error) return; // skip malformed events silently
+  await sqs.publish(config.aws.sqs.folderEventsUrl, payload);
+};
+
 const createFolder = async folderBody => {
   if (await Folder.isNameTaken(folderBody.name, folderBody.parentId)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Folder with this name already exists in the parent folder');
   }
-  return Folder.create(folderBody);
+  const created = await Folder.create(folderBody);
+  publishFolderEvent({
+    event: 'FOLDER_CREATED',
+    folderId: created._id,
+    name: created.name,
+    parentId: created.parentId || null,
+    at: Date.now(),
+  }).catch(() => {});
+  return created;
 };
 
 const queryFolders = async (filter, options) => {
@@ -55,6 +72,13 @@ const updateFolderById = async (folderId, updateBody) => {
   }
   Object.assign(folder, updateBody);
   await folder.save();
+  publishFolderEvent({
+    event: 'FOLDER_UPDATED',
+    folderId: folder._id,
+    name: folder.name,
+    parentId: folder.parentId || null,
+    at: Date.now(),
+  }).catch(() => {});
   return folder;
 };
 
@@ -64,6 +88,11 @@ const deleteFolderById = async folderId => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Folder not found');
   }
   await folder.remove();
+  publishFolderEvent({
+    event: 'FOLDER_DELETED',
+    folderId,
+    at: Date.now(),
+  }).catch(() => {});
   return folder;
 };
 
@@ -122,6 +151,12 @@ const cascadeDeleteFolder = async folderId => {
   }
 
   await Folder.deleteMany({_id: {$in: foldersToDelete}});
+  publishFolderEvent({
+    event: 'FOLDER_TREE_DELETED',
+    rootFolderId: folderId,
+    deletedFolderIds: foldersToDelete,
+    at: Date.now(),
+  }).catch(() => {});
 };
 
 const getAllFolders = async () => {

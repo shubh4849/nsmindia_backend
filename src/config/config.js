@@ -26,6 +26,29 @@ const envVarsSchema = Joi.object()
       .valid('true', 'false')
       .default('true'),
     R2_REGION: Joi.string().default('auto'),
+    AWS_SQS_ACCESS_KEY: Joi.string().required(),
+    AWS_SQS_SECRET_ACCESS_KEY: Joi.string().required(),
+    // Messaging: SQS
+    AWS_REGION: Joi.string().required(),
+    SQS_FOLDER_EVENTS_URL: Joi.string()
+      .uri()
+      .required(),
+    SQS_FILE_EVENTS_URL: Joi.string()
+      .uri()
+      .required(),
+    SQS_PROGRESS_EVENTS_URL: Joi.string()
+      .uri()
+      .required(),
+
+    // SSE service (external)
+    SSE_SERVICE_URL: Joi.string()
+      .uri()
+      .default('http://localhost:3003'),
+    SQS_PROGRESS_CONSUMER_ENABLED: Joi.string()
+      .valid('true', 'false')
+      .default('false'),
+
+    // Kafka legacy (unused now, but kept to avoid runtime breaks if present)
     KAFKA_BROKERS: Joi.string().default('localhost:9093'),
     KAFKA_CLIENT_ID: Joi.string().default('nsm-backend'),
     KAFKA_SSL: Joi.string()
@@ -59,6 +82,20 @@ module.exports = {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     },
+  },
+  aws: {
+    region: envVars.AWS_REGION,
+    accessKeyId: envVars.AWS_SQS_ACCESS_KEY,
+    secretAccessKey: envVars.AWS_SQS_SECRET_ACCESS_KEY,
+    sqs: {
+      folderEventsUrl: envVars.SQS_FOLDER_EVENTS_URL,
+      fileEventsUrl: envVars.SQS_FILE_EVENTS_URL,
+      progressEventsUrl: envVars.SQS_PROGRESS_EVENTS_URL,
+    },
+  },
+  sse: {
+    baseUrl: envVars.SSE_SERVICE_URL,
+    progressConsumerEnabled: envVars.SQS_PROGRESS_CONSUMER_ENABLED === 'true',
   },
   kafka: {
     brokers: envVars.KAFKA_BROKERS.split(',').map(s => s.trim()),

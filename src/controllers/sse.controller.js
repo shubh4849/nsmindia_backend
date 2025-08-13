@@ -20,6 +20,9 @@ const getUploadProgress = catchAsync(async (req, res) => {
 
   send('connected', {uploadId, status: 'uploading', progress: 0});
 
+  // Subscribe to push updates from SQS consumer
+  const unsubscribe = sseService.subscribeToUpload(uploadId, res);
+
   const startedAt = Date.now();
   const maxWaitMs = 15 * 1000;
 
@@ -38,6 +41,7 @@ const getUploadProgress = catchAsync(async (req, res) => {
         if (progress.status === 'completed' || progress.status === 'failed') {
           clearInterval(interval);
           clearInterval(heartbeat);
+          unsubscribe();
           await progressService.cleanupUploadProgress(uploadId);
           res.end();
         }
@@ -47,6 +51,7 @@ const getUploadProgress = catchAsync(async (req, res) => {
     } catch (e) {
       clearInterval(interval);
       clearInterval(heartbeat);
+      unsubscribe();
       res.end();
     }
   }, 1000);
@@ -58,6 +63,7 @@ const getUploadProgress = catchAsync(async (req, res) => {
   req.on('close', () => {
     clearInterval(interval);
     clearInterval(heartbeat);
+    unsubscribe();
     res.end();
   });
 });
