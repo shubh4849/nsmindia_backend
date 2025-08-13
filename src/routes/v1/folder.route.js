@@ -7,24 +7,44 @@ const config = require('../../config/config');
 
 const router = express.Router();
 
-async function proxyIfConfigured(req, res, next, pathBuilder) {
+async function proxyIfConfigured(req, res, next, pathBuilder, init = {}) {
   if (!config.services.folderServiceUrl) return next();
-  const url = `${config.services.folderServiceUrl}${pathBuilder(req)}`;
+  const path = pathBuilder(req);
+  const url = `${config.services.folderServiceUrl}${path}` + (req._parsedUrl.search || '');
+  const method = init.method || req.method;
   try {
-    const upstream = await fetch(url + (req._parsedUrl.search || ''), {
-      method: req.method,
-      headers: {'Content-Type': 'application/json'},
+    console.log('🔁 [FolderProxy] →', method, url);
+    const upstream = await fetch(url, {
+      method,
+      headers: init.headers || {'Content-Type': 'application/json'},
+      body: init.body || (method !== 'GET' && method !== 'HEAD' ? JSON.stringify(req.body || {}) : undefined),
     });
+    console.log('✅ [FolderProxy] ←', method, url, 'status:', upstream.status);
     res.status(upstream.status);
-    upstream.body.pipe(res);
+    if (upstream.body) {
+      upstream.body.pipe(res);
+      upstream.body.on('error', err => {
+        console.log('⚠️  [FolderProxy] stream error', {url, err: err?.message});
+        try {
+          res.end();
+        } catch {}
+      });
+    } else {
+      res.end();
+    }
   } catch (e) {
+    console.log('↩️  [FolderProxy] Fallback to local due to error:', e?.message, 'for', method, url);
     next();
   }
 }
 
 router
   .route('/')
-  .post(validate(folderValidation.createFolder), folderController.createFolder)
+  .post(
+    (req, res, next) => proxyIfConfigured(req, res, next, () => '/folders'),
+    validate(folderValidation.createFolder),
+    folderController.createFolder
+  )
   .get((req, res, next) => proxyIfConfigured(req, res, next, () => '/folders'), folderController.getFolders);
 
 router.get(
@@ -55,8 +75,16 @@ router
     validate(folderValidation.getFolder),
     folderController.getFolder
   )
-  .patch(validate(folderValidation.updateFolder), folderController.updateFolder)
-  .delete(validate(folderValidation.deleteFolder), folderController.deleteFolder);
+  .patch(
+    (req, res, next) => proxyIfConfigured(req, res, next, r => `/folders/${r.params.folderId}`),
+    validate(folderValidation.updateFolder),
+    folderController.updateFolder
+  )
+  .delete(
+    (req, res, next) => proxyIfConfigured(req, res, next, r => `/folders/${r.params.folderId}`),
+    validate(folderValidation.deleteFolder),
+    folderController.deleteFolder
+  );
 
 router.get(
   '/:folderId/contents',
