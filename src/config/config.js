@@ -48,6 +48,14 @@ const envVarsSchema = Joi.object()
       .valid('true', 'false')
       .default('false'),
 
+    // Optional external services for proxying
+    FILE_SERVICE_URL: Joi.string()
+      .uri()
+      .optional(),
+    FOLDER_SERVICE_URL: Joi.string()
+      .uri()
+      .optional(),
+
     // Kafka legacy (unused now, but kept to avoid runtime breaks if present)
     KAFKA_BROKERS: Joi.string().default('localhost:9093'),
     KAFKA_CLIENT_ID: Joi.string().default('nsm-backend'),
@@ -96,6 +104,10 @@ module.exports = {
   sse: {
     baseUrl: envVars.SSE_SERVICE_URL,
     progressConsumerEnabled: envVars.SQS_PROGRESS_CONSUMER_ENABLED === 'true',
+  },
+  services: {
+    fileServiceUrl: envVars.FILE_SERVICE_URL || null,
+    folderServiceUrl: envVars.FOLDER_SERVICE_URL || null,
   },
   kafka: {
     brokers: envVars.KAFKA_BROKERS.split(',').map(s => s.trim()),
