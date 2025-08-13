@@ -4,7 +4,6 @@ const {SQSClient, ReceiveMessageCommand, DeleteMessageCommand} = require('@aws-s
 require('dotenv').config();
 
 const app = express();
-app.set('json spaces', 2);
 
 const PORT = process.env.PORT || 8080;
 const QUEUE_URL = process.env.SQS_PROGRESS_EVENTS_URL;
