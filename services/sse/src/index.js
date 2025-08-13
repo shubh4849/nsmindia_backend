@@ -25,6 +25,12 @@ const sqs = new SQSClient({
 // In-memory subscriber registry
 const subs = new Map(); // uploadId -> Set(res)
 
+// Minimal request logger
+app.use((req, res, next) => {
+  if (req.path !== '/healthz') console.log(`[SSE Service] ${req.method} ${req.url}`);
+  next();
+});
+
 function subscribe(uploadId, res) {
   if (!subs.has(uploadId)) subs.set(uploadId, new Set());
   const set = subs.get(uploadId);
@@ -67,6 +73,7 @@ function emit(uploadId, event) {
 
 async function pollLoop() {
   console.log('[SSE Service] poll loop start', {queue: QUEUE_URL, region: REGION});
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       const resp = await sqs.send(
@@ -86,7 +93,6 @@ async function pollLoop() {
           await sqs.send(new DeleteMessageCommand({QueueUrl: QUEUE_URL, ReceiptHandle: m.ReceiptHandle}));
         } catch (e) {
           console.warn('[SSE Service] handle message failed', {err: e?.message});
-          // leave for retry / DLQ
         }
       }
     } catch (e) {
@@ -118,8 +124,10 @@ app.get('/events/upload/:uploadId', (req, res) => {
 });
 
 app.get('/healthz', (req, res) => res.json({status: 'ok'}));
+app.get('/debug', (req, res) => res.json({status: 'debug_ok', port: PORT, t: Date.now()}));
 
-app.listen(PORT, () => {
+// Start server first, then begin polling
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`SSE service listening on ${PORT}`);
   pollLoop();
 });

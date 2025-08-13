@@ -31,7 +31,14 @@ app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 app.use(compression());
 
-// Read-only endpoints mirrored for proxying
+app.use((req, res, next) => {
+  if (req.path !== '/healthz') console.log(`[FileService] ${req.method} ${req.url}`);
+  next();
+});
+
+app.get('/healthz', (req, res) => res.json({status: 'ok'}));
+app.get('/debug', (req, res) => res.json({status: 'debug_ok', port: process.env.PORT, t: Date.now()}));
+
 app.get('/files', async (req, res) => {
   const {page = 1, limit = 10, name, description, folderId} = req.query;
   const q = {};
@@ -70,22 +77,18 @@ app.get('/files/search', async (req, res) => {
   res.json({status: true, results: docs});
 });
 
-app.get('/healthz', (req, res) => {
-  console.log('[FileService] /healthz');
-  res.json({status: 'ok'});
-});
-
 const PORT = process.env.PORT || 3002;
 const MONGODB_URL = process.env.MONGODB_URL;
-console.log('[FileService] PORT env:', process.env.PORT);
-console.log('[FileService] MONGODB_URL present:', Boolean(MONGODB_URL));
 
-mongoose
-  .connect(MONGODB_URL, {useNewUrlParser: true, useUnifiedTopology: true})
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => console.log(`File service listening on ${PORT}`));
-  })
-  .catch(err => {
-    console.error('Mongo connect error', err);
-    process.exit(1);
-  });
+app.listen(PORT, '0.0.0.0', () => console.log(`File service listening on ${PORT}`));
+
+(async function connectWithRetry(retries = 5) {
+  try {
+    console.log('[FileService] Connecting to Mongo…');
+    await mongoose.connect(MONGODB_URL, {useNewUrlParser: true, useUnifiedTopology: true});
+    console.log('[FileService] Mongo connected');
+  } catch (err) {
+    console.error('[FileService] Mongo connect error', err?.message);
+    if (retries > 0) setTimeout(() => connectWithRetry(retries - 1), 2000);
+  }
+})();

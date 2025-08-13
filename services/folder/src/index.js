@@ -25,7 +25,23 @@ app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 app.use(compression());
 
-// GET list
+// Minimal request logger (avoid noisy headers)
+app.use((req, res, next) => {
+  if (req.path !== '/healthz') {
+    console.log(`[FolderService] ${req.method} ${req.url}`);
+  }
+  next();
+});
+
+// Health & debug
+app.get('/healthz', (req, res) => {
+  res.json({status: 'ok'});
+});
+app.get('/debug', (req, res) => {
+  res.json({status: 'debug_ok', port: process.env.PORT, t: Date.now()});
+});
+
+// Reads
 app.get('/folders', async (req, res) => {
   const {page = 1, limit = 10, name, description, parentId} = req.query;
   const q = {};
@@ -38,14 +54,12 @@ app.get('/folders', async (req, res) => {
   res.json({status: true, results: docs});
 });
 
-// GET single
 app.get('/folders/:folderId', async (req, res) => {
   const doc = await Folder.findById(req.params.folderId);
   if (!doc) return res.status(httpStatus.NOT_FOUND).json({status: false, message: 'Folder not found'});
   res.json({status: true, ...(doc.toObject ? doc.toObject() : doc)});
 });
 
-// Additional read endpoints used by monolith
 app.get('/folders/count', async (req, res) => {
   const count = await Folder.countDocuments();
   res.json({status: true, count});
@@ -61,22 +75,22 @@ app.get('/folders/root/contents', async (req, res) => {
   res.json({status: true, results});
 });
 
-app.get('/healthz', (req, res) => {
-  console.log('[FolderService] /healthz');
-  res.json({status: 'ok'});
-});
-
 const PORT = process.env.PORT || 3001;
 const MONGODB_URL = process.env.MONGODB_URL;
-console.log('[FolderService] PORT env:', process.env.PORT);
-console.log('[FolderService] MONGODB_URL present:', Boolean(MONGODB_URL));
 
-mongoose
-  .connect(MONGODB_URL, {useNewUrlParser: true, useUnifiedTopology: true})
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => console.log(`Folder service listening on ${PORT}`));
-  })
-  .catch(err => {
-    console.error('Mongo connect error', err);
-    process.exit(1);
-  });
+// Start server first
+app.listen(PORT, '0.0.0.0', () => console.log(`Folder service listening on ${PORT}`));
+
+// Connect to Mongo with simple retry (non-blocking)
+(async function connectWithRetry(retries = 5) {
+  try {
+    console.log('[FolderService] Connecting to Mongo…');
+    await mongoose.connect(MONGODB_URL, {useNewUrlParser: true, useUnifiedTopology: true});
+    console.log('[FolderService] Mongo connected');
+  } catch (err) {
+    console.error('[FolderService] Mongo connect error', err?.message);
+    if (retries > 0) {
+      setTimeout(() => connectWithRetry(retries - 1), 2000);
+    }
+  }
+})();
