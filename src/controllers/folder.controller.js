@@ -66,8 +66,31 @@ const getFolderTree = catchAsync(async (req, res) => {
 });
 
 const getRootContents = catchAsync(async (req, res) => {
-  const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
-  const folders = await folderService.queryFolders({parentId: null}, {page, limit});
+  const {page = 1, limit = 10, name, description, dateFrom, dateTo, includeChildCounts} = req.query;
+  const options = {page, limit};
+  if (includeChildCounts === 'true' || includeChildCounts === true) {
+    options.pipeline = [
+      {
+        $lookup: {
+          from: 'folders',
+          let: {parent: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$parentId', '$$parent']}}}, {$project: {_id: 1}}],
+          as: 'childFoldersDocs',
+        },
+      },
+      {
+        $lookup: {
+          from: 'files',
+          let: {folder: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$folderId', '$$folder']}}}, {$project: {_id: 1}}],
+          as: 'childFilesDocs',
+        },
+      },
+      {$addFields: {counts: {childFolders: {$size: '$childFoldersDocs'}, childFiles: {$size: '$childFilesDocs'}}}},
+      {$project: {childFoldersDocs: 0, childFilesDocs: 0}},
+    ];
+  }
+  const foldersPage = await folderService.queryFolders({parentId: null}, options);
 
   const filesPage = await fileService.getFilteredFiles(
     {folderId: null, name, description, dateFrom, dateTo},
@@ -80,14 +103,14 @@ const getRootContents = catchAsync(async (req, res) => {
 
   const responsePayload = {
     status: true,
-    folders: folders.results || [],
+    folders: foldersPage.results || [],
     files,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
-      totalFolders: (folders.results || []).length,
+      totalFolders: foldersPage.totalResults || 0,
       totalFiles,
-      totalPagesFolders: Math.ceil((folders.results || []).length / limit),
+      totalPagesFolders: foldersPage.totalPages || Math.ceil((foldersPage.results || []).length / Math.max(1, limit)),
       totalPagesFiles,
     },
   };
@@ -95,8 +118,31 @@ const getRootContents = catchAsync(async (req, res) => {
 });
 
 const getFolderContents = catchAsync(async (req, res) => {
-  const {page = 1, limit = 10, name, description, dateFrom, dateTo} = req.query;
-  const folders = await folderService.getFoldersByParentId(req.params.folderId);
+  const {page = 1, limit = 10, name, description, dateFrom, dateTo, includeChildCounts} = req.query;
+  const options = {page, limit};
+  if (includeChildCounts === 'true' || includeChildCounts === true) {
+    options.pipeline = [
+      {
+        $lookup: {
+          from: 'folders',
+          let: {parent: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$parentId', '$$parent']}}}, {$project: {_id: 1}}],
+          as: 'childFoldersDocs',
+        },
+      },
+      {
+        $lookup: {
+          from: 'files',
+          let: {folder: '$_id'},
+          pipeline: [{$match: {$expr: {$eq: ['$folderId', '$$folder']}}}, {$project: {_id: 1}}],
+          as: 'childFilesDocs',
+        },
+      },
+      {$addFields: {counts: {childFolders: {$size: '$childFoldersDocs'}, childFiles: {$size: '$childFilesDocs'}}}},
+      {$project: {childFoldersDocs: 0, childFilesDocs: 0}},
+    ];
+  }
+  const foldersPage = await folderService.queryFolders({parentId: req.params.folderId}, options);
 
   const filesPage = await fileService.getFilesByFolderId(
     req.params.folderId,
@@ -110,14 +156,14 @@ const getFolderContents = catchAsync(async (req, res) => {
 
   const responsePayload = {
     status: true,
-    folders,
+    folders: foldersPage.results || [],
     files,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
-      totalFolders: folders.length,
+      totalFolders: foldersPage.totalResults || 0,
       totalFiles: totalFiles,
-      totalPagesFolders: Math.ceil(folders.length / limit),
+      totalPagesFolders: foldersPage.totalPages || Math.ceil((foldersPage.results || []).length / Math.max(1, limit)),
       totalPagesFiles: totalPagesFiles,
     },
   };

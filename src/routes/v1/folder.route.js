@@ -70,12 +70,13 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}, diagnos
     });
     const elapsedMs = Date.now() - startedAt;
     console.log(`✅ [FolderProxy:${rid}] upstream`, {status: upstream.status, ok: upstream.ok, elapsedMs});
-    // Response normalization for microservice responses: tree and contents
+    // Response normalization for microservice responses: tree, list, contents
     if (upstream.ok) {
       const isTree = path === '/folders/tree';
+      const isList = path === '/folders';
       const isRootContents = path === '/folders/root/contents';
       const contentsMatch = path.match(/^\/folders\/([^/]+)\/contents$/);
-      if (isTree || isRootContents || contentsMatch) {
+      if (isTree || isList || isRootContents || contentsMatch) {
         try {
           const text = await upstream.text();
           let parsed;
@@ -90,6 +91,25 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}, diagnos
           if (isTree && parsed && typeof parsed === 'object' && Array.isArray(parsed.results)) {
             const tree = folderService.buildTree(parsed.results);
             normalized = {status: true, results: tree};
+          } else if (isList && parsed && typeof parsed === 'object') {
+            const wantsCounts = req.query.includeChildCounts === 'true' || req.query.includeChildCounts === true;
+            const results = Array.isArray(parsed.results) ? parsed.results : [];
+            if (wantsCounts && results.length > 0) {
+              const enriched = await Promise.all(
+                results.map(async f => {
+                  const id = (f && (f._id || f.id)) || null;
+                  if (!id) return f;
+                  const [childFolders, childFiles] = await Promise.all([
+                    folderService.countChildFolders(id),
+                    fileService.countChildFiles(id),
+                  ]);
+                  return {...f, counts: {childFolders, childFiles}};
+                })
+              );
+              normalized = {status: true, results: enriched};
+            } else if (!('status' in (parsed || {}))) {
+              normalized = {status: true, ...parsed};
+            }
           } else if ((isRootContents || contentsMatch) && parsed && typeof parsed === 'object') {
             const page = parseInt(req.query.page || '1');
             const limit = parseInt(req.query.limit || '10');
@@ -116,10 +136,10 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}, diagnos
               );
             }
 
-            const files = filesPage.results || [];
+            let files = filesPage.results || [];
             const totalFiles = filesPage.totalResults || 0;
             const totalPagesFiles = filesPage.totalPages || Math.ceil(totalFiles / Math.max(1, limit));
-            const totalFolders = folders.length;
+            let totalFolders = folders.length;
             const pagination = {
               page,
               limit,
@@ -128,7 +148,26 @@ async function proxyIfConfigured(req, res, next, pathBuilder, init = {}, diagnos
               totalPagesFolders: Math.ceil(totalFolders / Math.max(1, limit)),
               totalPagesFiles,
             };
-            normalized = {status: true, folders, files, pagination};
+
+            // Optionally enrich with direct child counts when requested
+            const wantsCounts = req.query.includeChildCounts === 'true' || req.query.includeChildCounts === true;
+            if (wantsCounts && Array.isArray(folders) && folders.length > 0) {
+              const enriched = await Promise.all(
+                folders.map(async f => {
+                  const id = (f && (f._id || f.id)) || null;
+                  if (!id) return f;
+                  const [childFolders, childFiles] = await Promise.all([
+                    folderService.countChildFolders(id),
+                    fileService.countChildFiles(id),
+                  ]);
+                  return {...f, counts: {childFolders, childFiles}};
+                })
+              );
+              totalFolders = enriched.length;
+              normalized = {status: true, folders: enriched, files, pagination: {...pagination, totalFolders}};
+            } else {
+              normalized = {status: true, folders, files, pagination};
+            }
           }
           res.set('Content-Type', 'application/json');
           return res

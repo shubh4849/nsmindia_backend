@@ -13,6 +13,9 @@ const {errorConverter, errorHandler} = require('./middlewares/error');
 
 const app = express();
 
+// Disable ETag to avoid 304 caching interfering with dynamic payloads
+app.set('etag', false);
+
 if (config.env !== 'test') {
   app.use(morgan.successHandler);
   app.use(morgan.errorHandler);
